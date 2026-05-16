@@ -31,6 +31,20 @@ git tag v0.1.2
 git push origin v0.1.2
 ```
 
+Pushing the tag runs the `Release` GitHub Actions workflow. It publishes:
+
+- `ads_darwin_arm64.tar.gz` for Apple Silicon Macs
+- `ads_darwin_amd64.tar.gz` for Intel Macs
+- `checksums.txt`
+
+After the workflow finishes, verify the assets:
+
+```bash
+gh release view v0.1.2 --json tagName,assets
+gh release download v0.1.2 --pattern 'ads_darwin_arm64.tar.gz' --dir /tmp/apple-ads-cli-release
+tar -tzf /tmp/apple-ads-cli-release/ads_darwin_arm64.tar.gz
+```
+
 Calculate the release tarball SHA:
 
 ```bash

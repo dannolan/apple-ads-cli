@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  macos-binaries:
+    name: Build macOS binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build release assets
+        env:
+          VERSION: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          ldflags="-s -w -X github.com/dannolan/apple-ads-cli/internal/cli.Version=${VERSION} -X github.com/dannolan/apple-ads-cli/internal/cli.Commit=${COMMIT} -X github.com/dannolan/apple-ads-cli/internal/cli.Date=${date}"
+
+          for arch in arm64 amd64; do
+            workdir="dist/ads_darwin_${arch}"
+            mkdir -p "$workdir"
+            CGO_ENABLED=0 GOOS=darwin GOARCH="$arch" go build -trimpath -ldflags "$ldflags" -o "$workdir/ads" ./cmd/ads
+            cp README.md LICENSE "$workdir/"
+            tar -C "$workdir" -czf "dist/ads_darwin_${arch}.tar.gz" ads README.md LICENSE
+          done
+
+          cd dist
+          shasum -a 256 ads_darwin_*.tar.gz > checksums.txt
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/ads_darwin_*.tar.gz dist/checksums.txt --clobber
+          else
+            gh release create "$TAG" dist/ads_darwin_*.tar.gz dist/checksums.txt --generate-notes
+          fi
