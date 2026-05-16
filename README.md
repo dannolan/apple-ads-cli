@@ -59,13 +59,6 @@ brew install apple-ads-cli
 ads --help
 ```
 
-For local testing before the formula is published:
-
-```bash
-brew install --build-from-source ./Formula/apple-ads-cli.rb
-ads --help
-```
-
 ### Maintainer Setup
 
 Create a separate tap repository:
@@ -80,16 +73,17 @@ Tag and release this project:
 
 ```bash
 cd ../apple-ads-cli
-git tag v0.1.0
-git push origin v0.1.0
+export VERSION=v0.1.1
+git tag "$VERSION"
+git push origin "$VERSION"
 ```
 
 Download the release tarball and calculate the SHA:
 
 ```bash
-curl -L -o apple-ads-cli-0.1.0.tar.gz \
-  https://github.com/dannolan/apple-ads-cli/archive/refs/tags/v0.1.0.tar.gz
-shasum -a 256 apple-ads-cli-0.1.0.tar.gz
+curl -L -o "apple-ads-cli-$VERSION.tar.gz" \
+  "https://github.com/dannolan/apple-ads-cli/archive/refs/tags/$VERSION.tar.gz"
+shasum -a 256 "apple-ads-cli-$VERSION.tar.gz"
 ```
 
 Create `Formula/apple-ads-cli.rb` in `dannolan/homebrew-tap`:
@@ -98,7 +92,7 @@ Create `Formula/apple-ads-cli.rb` in `dannolan/homebrew-tap`:
 class AppleAdsCli < Formula
   desc "Agent-first Go CLI for Apple Ads"
   homepage "https://github.com/dannolan/apple-ads-cli"
-  url "https://github.com/dannolan/apple-ads-cli/archive/refs/tags/v0.1.0.tar.gz"
+  url "https://github.com/dannolan/apple-ads-cli/archive/refs/tags/v0.1.1.tar.gz"
   sha256 "<sha256-from-shasum>"
   license "MIT"
 
@@ -117,12 +111,15 @@ end
 Test and publish the tap:
 
 ```bash
-brew audit --strict --online ./Formula/apple-ads-cli.rb
-brew install --build-from-source ./Formula/apple-ads-cli.rb
+brew tap dannolan/tap
+brew uninstall apple-ads-cli 2>/dev/null || true
+brew install --build-from-source dannolan/tap/apple-ads-cli
 ads --help
+brew test dannolan/tap/apple-ads-cli
+brew audit --strict dannolan/tap/apple-ads-cli
 
 git add Formula/apple-ads-cli.rb
-git commit -m "Add apple-ads-cli formula"
+git commit -m "Update apple-ads-cli to 0.1.1"
 git push origin main
 ```
 
