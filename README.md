@@ -23,6 +23,12 @@ Apple Ads work is operational: inspect account state, form a plan, make small ch
 
 This is an unofficial Apple Ads tool.
 
+## For Agents
+
+Agent usage is documented in [SKILL.md](SKILL.md). Treat that file as the canonical operating guide for inspection, dry-run planning, approved mutation, verification, and raw API fallback workflows.
+
+If you are packaging this for an agent runtime, use the bundled skill at [skills/apple-ads-cli/SKILL.md](skills/apple-ads-cli/SKILL.md).
+
 ## Install
 
 ```bash
@@ -90,6 +96,8 @@ ads campaigns list --json
 ```
 
 ## Agent Contract
+
+The short version is below. For the full agent workflow, read [SKILL.md](SKILL.md).
 
 Agents should use this order for account work:
 
@@ -264,4 +272,3 @@ Recommended policy:
 go test ./...
 go build ./cmd/ads
 ```
-
