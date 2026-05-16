@@ -172,6 +172,68 @@ ads config test --json
 ads campaigns list --json
 ```
 
+### 1Password Credentials
+
+Do not paste Apple Ads credentials into agent chat. Store them in 1Password and hydrate the local CLI config from `op`.
+
+Recommended 1Password layout:
+
+- Vault: `Private` or your team vault
+- Item: `Apple Ads API`
+- Fields: `org_id`, `client_id`, `team_id`, `key_id`
+- Document: `Apple Ads API Private Key` containing the EC private key PEM
+
+Create the scalar fields in 1Password. The CLI form is convenient, but assignment values can appear in shell history and process listings, so prefer the 1Password app or a JSON template for real secrets:
+
+```bash
+op item create --category=api_credential \
+  --title "Apple Ads API" \
+  --vault "Private" \
+  'org_id[text]=123456' \
+  'client_id[concealed]=YOUR_CLIENT_ID' \
+  'team_id[concealed]=YOUR_TEAM_ID' \
+  'key_id[concealed]=YOUR_KEY_ID'
+```
+
+Store the private key as a document:
+
+```bash
+op document create ./private-key.pem \
+  --title "Apple Ads API Private Key" \
+  --vault "Private" \
+  --tags apple-ads-cli
+```
+
+Hydrate `ads` config from 1Password:
+
+```bash
+export OP_VAULT="Private"
+export ADS_CONFIG_DIR="$HOME/.apple-ads-cli"
+mkdir -p "$ADS_CONFIG_DIR"
+
+op document get "Apple Ads API Private Key" \
+  --vault "$OP_VAULT" \
+  --out-file "$ADS_CONFIG_DIR/private-key.pem" \
+  --file-mode 0600 \
+  --force
+
+ads config init \
+  --org-id "$(op read "op://$OP_VAULT/Apple Ads API/org_id")" \
+  --client-id "$(op read "op://$OP_VAULT/Apple Ads API/client_id")" \
+  --team-id "$(op read "op://$OP_VAULT/Apple Ads API/team_id")" \
+  --key-id "$(op read "op://$OP_VAULT/Apple Ads API/key_id")" \
+  --private-key "$ADS_CONFIG_DIR/private-key.pem"
+```
+
+Then add the app profile and test:
+
+```bash
+ads config app add --app-id 1234567890 --name "My App" --countries US --bid 1.50 --cpa-goal 5.00
+ads config test --json
+```
+
+For agents, the safe pattern is: read from `op`, write only the local config files needed by `ads`, never print raw secret values, then use `ads config show --json` to confirm values are redacted.
+
 ## Agent Contract
 
 The short version is below. For the full agent workflow, read [SKILL.md](SKILL.md).
