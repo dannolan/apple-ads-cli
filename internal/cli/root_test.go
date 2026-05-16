@@ -53,6 +53,17 @@ func TestManifestIncludesMutationMetadata(t *testing.T) {
 	}
 }
 
+func TestManifestIncludesSmoke(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Execute([]string{"manifest", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("unexpected exit %d: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "ads smoke") {
+		t.Fatalf("manifest did not include smoke command: %s", stdout.String())
+	}
+}
+
 func TestCampaignCreateDryRunUsesConfiguredApp(t *testing.T) {
 	configDir := t.TempDir()
 	var stdout, stderr bytes.Buffer

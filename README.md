@@ -171,6 +171,7 @@ Verify access:
 
 ```bash
 ads config test --json
+ads smoke --json
 ads campaigns list --json
 ```
 
@@ -235,6 +236,23 @@ ads config test --json
 ```
 
 For agents, the safe pattern is: read from `op`, write only the local config files needed by `ads`, never print raw secret values, then use `ads config show --json` to confirm values are redacted.
+
+To let an agent smoke test locally, do not paste secrets into chat. Put the item and private key in 1Password, sign in with `op signin`, then run:
+
+```bash
+ads config from-1password \
+  --vault "Private" \
+  --item "Apple Ads API" \
+  --key-document "Apple Ads API Private Key" \
+  --app-id 1234567890 \
+  --app-name "My App" \
+  --countries US \
+  --json
+
+ads smoke --json
+```
+
+`ads smoke` is read-only. It verifies OAuth, `/me`, supported countries, active app config, app eligibility, and campaign listing.
 
 ## Agent Contract
 

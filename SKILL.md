@@ -21,6 +21,7 @@ Use `ads` for Apple Ads account work. It is agent-first: inspect state, produce 
 ```bash
 ads config show --json
 ads config test --json
+ads smoke --json
 ads acl me --json
 ads campaigns list --json
 ads campaigns audit --json
@@ -151,4 +152,3 @@ ads api GET /me --no-org-context --json
 ```
 
 Non-GET methods dry-run unless `--apply` is present.
-

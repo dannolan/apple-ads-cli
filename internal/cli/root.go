@@ -41,6 +41,7 @@ func NewRootCommandWithContext() (*cobra.Command, *appContext) {
 		newGeoCommand(ctx),
 		newAdsCommand(ctx),
 		newOptimizeCommand(ctx),
+		newSmokeCommand(ctx),
 		newVersionCommand(ctx),
 	)
 	root.AddCommand(newManifestCommand(ctx, root))
