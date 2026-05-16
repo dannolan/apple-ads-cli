@@ -57,8 +57,8 @@ case "$arch" in
   *) echo "unsupported macOS arch: $arch" >&2; exit 1 ;;
 esac
 
-curl -L "https://github.com/dannolan/apple-ads-cli/releases/latest/download/ads_darwin_${target}.tar.gz" \
-  | tar -xz ads
+curl -L -o ads.zip "https://github.com/dannolan/apple-ads-cli/releases/latest/download/ads_darwin_${target}.zip"
+unzip -q -o ads.zip ads
 
 install -m 0755 ads /usr/local/bin/ads
 ads --help
@@ -131,7 +131,7 @@ ads campaigns list --json
 
 ## 🔐 1Password Setup
 
-Do not paste Apple Ads credentials into agent chat. Store them in 1Password and hydrate the local CLI config from `op`.
+Do not paste Apple Ads credentials into agent chat. Store them in 1Password and hydrate the local CLI config with the [1Password CLI (`op`)](https://developer.1password.com/docs/cli/).
 
 Recommended layout:
 

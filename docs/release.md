@@ -1,68 +1,66 @@
 # Release Checklist
 
-Use this checklist before tagging a release or updating the Homebrew tap.
+Releases are tag-driven. GitHub Actions owns the GitHub release, macOS zip assets, checksums, and Homebrew tap formula update.
 
-The preferred path is the release script:
+## One-Time Setup
 
-```bash
-scripts/release.sh v0.1.2
-```
+Create a repository secret named `HOMEBREW_TAP_TOKEN`.
 
-Set `HOMEBREW_TAP_DIR=/path/to/homebrew-tap` only if you intentionally work from a nonstandard tap checkout. By default the script edits Homebrew's tapped checkout under `$(brew --repository)/Library/Taps/dannolan/homebrew-tap`.
+The token must be able to push to `dannolan/homebrew-tap`. A fine-grained PAT should include:
 
-## CLI Repository
+- Repository access: `dannolan/homebrew-tap`
+- Permissions: `Contents: Read and write`
+
+The release workflow rewrites `Formula/apple-ads-cli.rb` as a binary formula. Homebrew installs the prebuilt `ads` binary from the matching macOS zip, so users do not need Go to install from the tap.
+
+## Cut A Release
 
 Run local checks:
 
 ```bash
 git status -sb
 go test ./...
+go vet ./...
 go build -o /tmp/ads ./cmd/ads
 /tmp/ads --help
 git ls-files cmd/ads/main.go
 ```
 
-The `git ls-files` check must print `cmd/ads/main.go`. If it does not, the release tarball will not contain the binary entrypoint.
-
 Tag and push:
 
 ```bash
-git tag v0.1.2
-git push origin v0.1.2
+scripts/release.sh v0.1.2
 ```
 
-Pushing the tag runs the `Release` GitHub Actions workflow. It publishes:
+The script only validates the repo and pushes the tag. The `Release` GitHub Actions workflow then:
 
-- `ads_darwin_arm64.tar.gz` for Apple Silicon Macs
-- `ads_darwin_amd64.tar.gz` for Intel Macs
+1. Runs tests.
+2. Builds `ads` for `darwin/arm64`.
+3. Builds `ads` for `darwin/amd64`.
+4. Publishes GitHub release assets.
+5. Generates `checksums.txt`.
+6. Calculates SHA-256 values for both macOS zip files.
+7. Rewrites `dannolan/homebrew-tap/Formula/apple-ads-cli.rb` with the zip URLs and checksums.
+8. Commits and pushes the tap change.
+
+## Release Assets
+
+Each tag publishes:
+
+- `ads_darwin_arm64.zip` for Apple Silicon Macs
+- `ads_darwin_amd64.zip` for Intel Macs
 - `checksums.txt`
 
-After the workflow finishes, verify the assets:
+Verify the release:
 
 ```bash
+gh run list --workflow Release --limit 1
 gh release view v0.1.2 --json tagName,assets
-gh release download v0.1.2 --pattern 'ads_darwin_arm64.tar.gz' --dir /tmp/apple-ads-cli-release
-tar -tzf /tmp/apple-ads-cli-release/ads_darwin_arm64.tar.gz
+gh release download v0.1.2 --pattern 'ads_darwin_arm64.zip' --dir /tmp/apple-ads-cli-release
+unzip -l /tmp/apple-ads-cli-release/ads_darwin_arm64.zip
 ```
 
-Calculate the release tarball SHA:
-
-```bash
-curl -L -o apple-ads-cli-0.1.2.tar.gz \
-  https://github.com/dannolan/apple-ads-cli/archive/refs/tags/v0.1.2.tar.gz
-shasum -a 256 apple-ads-cli-0.1.2.tar.gz
-```
-
-## Homebrew Tap
-
-Update `dannolan/homebrew-tap/Formula/apple-ads-cli.rb`:
-
-```ruby
-url "https://github.com/dannolan/apple-ads-cli/archive/refs/tags/v0.1.2.tar.gz"
-sha256 "<new-sha>"
-```
-
-Install from the tapped formula, not a direct path:
+Verify Homebrew:
 
 ```bash
 brew update
@@ -73,17 +71,9 @@ brew test dannolan/tap/apple-ads-cli
 brew audit --strict dannolan/tap/apple-ads-cli
 ```
 
-Commit and push the tap:
-
-```bash
-git add Formula/apple-ads-cli.rb
-git commit -m "Update apple-ads-cli to 0.1.2"
-git push origin main
-```
-
 ## Failure Modes To Avoid
 
 - Do not tag while `git status --short --untracked-files=all` shows release-critical files.
-- Do not use broad `.gitignore` entries that can hide source directories. Ignore root binaries as `/ads`, not `ads`.
-- Do not update the tap before the tag exists and the tarball SHA has been calculated from GitHub.
-- Do not trust local builds alone; test the Homebrew formula from the public tap.
+- Do not update the tap by hand before the tag workflow finishes.
+- Do not remove `cmd/ads/main.go`; the source formula depends on that entrypoint.
+- Do not claim a release is published until both GitHub release assets and the tap commit exist.

@@ -9,8 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  macos-binaries:
-    name: Build macOS binaries
+  release:
+    name: Build release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -23,6 +23,7 @@ jobs:
         run: go test ./...
 
       - name: Build release assets
+        id: assets
         env:
           VERSION: ${{ github.ref_name }}
           COMMIT: ${{ github.sha }}
@@ -37,11 +38,13 @@ jobs:
             mkdir -p "$workdir"
             CGO_ENABLED=0 GOOS=darwin GOARCH="$arch" go build -trimpath -ldflags "$ldflags" -o "$workdir/ads" ./cmd/ads
             cp README.md LICENSE "$workdir/"
-            tar -C "$workdir" -czf "dist/ads_darwin_${arch}.tar.gz" ads README.md LICENSE
+            (cd "$workdir" && zip -q -r "../ads_darwin_${arch}.zip" ads README.md LICENSE)
           done
 
           cd dist
-          shasum -a 256 ads_darwin_*.tar.gz > checksums.txt
+          shasum -a 256 ads_darwin_*.zip > checksums.txt
+          echo "arm64_sha256=$(shasum -a 256 ads_darwin_arm64.zip | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "amd64_sha256=$(shasum -a 256 ads_darwin_amd64.zip | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub release
         env:
@@ -50,7 +53,67 @@ jobs:
         run: |
           set -euo pipefail
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/ads_darwin_*.tar.gz dist/checksums.txt --clobber
+            gh release upload "$TAG" dist/ads_darwin_*.zip dist/checksums.txt --clobber
           else
-            gh release create "$TAG" dist/ads_darwin_*.tar.gz dist/checksums.txt --generate-notes
+            gh release create "$TAG" dist/ads_darwin_*.zip dist/checksums.txt --generate-notes
           fi
+
+      - name: Checkout Homebrew tap
+        uses: actions/checkout@v5
+        with:
+          repository: dannolan/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Update Homebrew formula
+        env:
+          TAG: ${{ github.ref_name }}
+          ARM64_SHA256: ${{ steps.assets.outputs.arm64_sha256 }}
+          AMD64_SHA256: ${{ steps.assets.outputs.amd64_sha256 }}
+        run: |
+          set -euo pipefail
+          formula="homebrew-tap/Formula/apple-ads-cli.rb"
+          mkdir -p "$(dirname "$formula")"
+          cat > "$formula" <<RUBY
+          class AppleAdsCli < Formula
+            desc "Agent-first CLI for Apple Ads"
+            homepage "https://github.com/dannolan/apple-ads-cli"
+            version "${TAG#v}"
+            license "MIT"
+
+            depends_on :macos
+
+            if Hardware::CPU.arm?
+              url "https://github.com/dannolan/apple-ads-cli/releases/download/${TAG}/ads_darwin_arm64.zip"
+              sha256 "${ARM64_SHA256}"
+            else
+              url "https://github.com/dannolan/apple-ads-cli/releases/download/${TAG}/ads_darwin_amd64.zip"
+              sha256 "${AMD64_SHA256}"
+            end
+
+            def install
+              bin.install "ads"
+            end
+
+            test do
+              assert_match "Apple Ads", shell_output("#{bin}/ads --help")
+              assert_match version.to_s, shell_output("#{bin}/ads version --json")
+            end
+          end
+          RUBY
+
+      - name: Commit Homebrew formula
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          cd homebrew-tap
+          if git diff --quiet; then
+            echo "Homebrew formula already up to date"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/apple-ads-cli.rb
+          git commit -m "Update apple-ads-cli to ${TAG#v}"
+          git push
