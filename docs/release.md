@@ -2,6 +2,14 @@
 
 Use this checklist before tagging a release or updating the Homebrew tap.
 
+The preferred path is the release script:
+
+```bash
+scripts/release.sh v0.1.2
+```
+
+Set `HOMEBREW_TAP_DIR=/path/to/homebrew-tap` only if you intentionally work from a nonstandard tap checkout. By default the script edits Homebrew's tapped checkout under `$(brew --repository)/Library/Taps/dannolan/homebrew-tap`.
+
 ## CLI Repository
 
 Run local checks:

@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"strings"
@@ -16,6 +17,8 @@ type appContext struct {
 	AppSlug   string
 	JSON      bool
 	Pretty    bool
+	Out       io.Writer
+	Err       io.Writer
 	store     *config.Store
 }
 
@@ -52,6 +55,10 @@ func (a *appContext) ActiveApp() (config.App, string, error) {
 }
 
 func (a *appContext) Print(value any) error {
+	out := a.Out
+	if out == nil {
+		out = os.Stdout
+	}
 	indent := ""
 	if a.Pretty || !a.JSON {
 		indent = "  "
@@ -66,8 +73,71 @@ func (a *appContext) Print(value any) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(string(data))
-	return nil
+	_, err = fmt.Fprintln(out, string(data))
+	return err
+}
+
+func (a *appContext) PrintError(err error) error {
+	out := a.Err
+	if out == nil {
+		out = os.Stderr
+	}
+	if a.JSON {
+		data, marshalErr := json.Marshal(map[string]any{
+			"ok":    false,
+			"error": err.Error(),
+			"hint":  errorHint(err),
+		})
+		if marshalErr != nil {
+			return marshalErr
+		}
+		_, writeErr := fmt.Fprintln(out, string(data))
+		return writeErr
+	}
+	_, writeErr := fmt.Fprintln(out, err.Error())
+	return writeErr
+}
+
+func errorHint(err error) string {
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "no active app configured"):
+		return "Run ads config app add, or pass --app <slug>."
+	case strings.Contains(msg, "load credentials"):
+		return "Run ads config init, or hydrate config from 1Password with ads config from-1password."
+	case strings.Contains(msg, "unknown app"):
+		return "Run ads config app list --json to inspect configured app slugs."
+	case strings.Contains(msg, "required flag"):
+		return "Run the same command with --help to see required flags."
+	default:
+		return ""
+	}
+}
+
+func Execute(args []string, out, errOut io.Writer) int {
+	cmd, ctx := NewRootCommandWithContext()
+	ctx.Out = out
+	ctx.Err = errOut
+	cmd.SetOut(out)
+	cmd.SetErr(errOut)
+	cmd.SetArgs(args)
+	if err := cmd.Execute(); err != nil {
+		ctx.JSON = ctx.JSON || shouldEmitJSON(args)
+		if printErr := ctx.PrintError(err); printErr != nil && errOut != nil {
+			_, _ = fmt.Fprintln(errOut, printErr.Error())
+		}
+		return 1
+	}
+	return 0
+}
+
+func shouldEmitJSON(args []string) bool {
+	for _, arg := range args {
+		if arg == "--json" {
+			return true
+		}
+	}
+	return false
 }
 
 func parseCSV(s string) []string {
@@ -124,4 +194,12 @@ func dryRunPayload(action, path string, body any) map[string]any {
 		"body":    body,
 		"hint":    "Re-run with --apply to execute this mutation.",
 	}
+}
+
+func opRef(vault, item, field string) string {
+	return fmt.Sprintf("op://%s/%s/%s", vault, item, field)
+}
+
+func trimCommandOutput(data []byte) string {
+	return strings.TrimSpace(string(data))
 }

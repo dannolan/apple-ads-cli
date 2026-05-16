@@ -99,11 +99,16 @@ class AppleAdsCli < Formula
   depends_on "go" => :build
 
   def install
-    system "go", "build", *std_go_args(output: bin/"ads"), "./cmd/ads"
+    ldflags = %W[
+      -s -w
+      -X github.com/dannolan/apple-ads-cli/internal/cli.Version=#{version}
+    ]
+    system "go", "build", *std_go_args(ldflags: ldflags, output: bin/"ads"), "./cmd/ads"
   end
 
   test do
     assert_match "Agent-first CLI for Apple Ads", shell_output("#{bin}/ads --help")
+    assert_match version.to_s, shell_output("#{bin}/ads version --json")
   end
 end
 ```
@@ -411,4 +416,8 @@ go build ./cmd/ads
 
 ## Releases
 
-Before tagging or updating Homebrew, follow [docs/release.md](docs/release.md). The release checklist exists to catch missing entrypoints, ignored files, stale tarball SHAs, and formula build failures before users hit them.
+Before tagging or updating Homebrew, run `scripts/release.sh vX.Y.Z` or follow [docs/release.md](docs/release.md). The release checklist exists to catch missing entrypoints, ignored files, stale tarball SHAs, and formula build failures before users hit them.
+
+## API Audit
+
+Wrapped endpoint checks are tracked in [docs/api-audit.md](docs/api-audit.md). For unsupported or newly released Apple Ads endpoints, use `ads api`.

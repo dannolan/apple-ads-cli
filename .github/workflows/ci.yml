@@ -18,6 +18,9 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: go test ./...
+      - run: go vet ./...
       - run: go build -o ads ./cmd/ads
       - run: ./ads --help
+      - run: go build -ldflags "-X github.com/dannolan/apple-ads-cli/internal/cli.Version=ci" -o ads ./cmd/ads
+      - run: ./ads version --json | grep ci
       - run: test -f cmd/ads/main.go

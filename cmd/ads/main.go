@@ -1,15 +1,11 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/dannolan/apple-ads-cli/internal/cli"
 )
 
 func main() {
-	if err := cli.NewRootCommand().Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+	os.Exit(cli.Execute(os.Args[1:], os.Stdout, os.Stderr))
 }

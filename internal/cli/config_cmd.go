@@ -2,6 +2,10 @@ package cli
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
 
 	"github.com/dannolan/apple-ads-cli/internal/config"
 	"github.com/spf13/cobra"
@@ -69,6 +73,7 @@ func newConfigCommand(ctx *appContext) *cobra.Command {
 			return ctx.Print(map[string]any{"ok": true, "me": resp["data"]})
 		},
 	}
+	fromOnePassword := onePasswordCommand(ctx)
 
 	app := &cobra.Command{Use: "app", Short: "Manage configured apps"}
 	var appID int64
@@ -141,8 +146,98 @@ func newConfigCommand(ctx *appContext) *cobra.Command {
 		},
 	}
 	app.AddCommand(add, list, use)
-	cmd.AddCommand(init, show, test, app)
+	cmd.AddCommand(init, show, test, fromOnePassword, app)
 	return cmd
+}
+
+func onePasswordCommand(ctx *appContext) *cobra.Command {
+	var vault, item, keyDocument, keyPath string
+	var appName, countries string
+	var appID int64
+	var bid, cpa float64
+	cmd := &cobra.Command{
+		Use:   "from-1password",
+		Short: "Hydrate ads config from 1Password CLI secret references",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			store, err := ctx.Store()
+			if err != nil {
+				return err
+			}
+			if _, err := exec.LookPath("op"); err != nil {
+				return fmt.Errorf("1Password CLI not found in PATH: %w", err)
+			}
+			if err := os.MkdirAll(store.Dir(), 0o700); err != nil {
+				return err
+			}
+			if keyPath == "" {
+				keyPath = filepath.Join(store.Dir(), "private-key.pem")
+			}
+			if keyDocument != "" {
+				op := exec.Command("op", "document", "get", keyDocument, "--vault", vault, "--out-file", keyPath, "--file-mode", "0600", "--force")
+				if data, err := op.CombinedOutput(); err != nil {
+					return fmt.Errorf("download private key from 1Password: %w: %s", err, trimCommandOutput(data))
+				}
+			}
+			orgIDRaw, err := opRead(vault, item, "org_id")
+			if err != nil {
+				return err
+			}
+			orgID, err := strconv.ParseInt(orgIDRaw, 10, 64)
+			if err != nil {
+				return fmt.Errorf("parse org_id from 1Password: %w", err)
+			}
+			clientID, err := opRead(vault, item, "client_id")
+			if err != nil {
+				return err
+			}
+			teamID, err := opRead(vault, item, "team_id")
+			if err != nil {
+				return err
+			}
+			keyID, err := opRead(vault, item, "key_id")
+			if err != nil {
+				return err
+			}
+			creds := config.Credentials{OrgID: orgID, ClientID: clientID, TeamID: teamID, KeyID: keyID, PrivateKeyPath: keyPath}
+			if err := store.SaveCredentials(creds); err != nil {
+				return err
+			}
+			result := map[string]any{"ok": true, "config_dir": store.Dir(), "credentials": "saved", "private_key_path": "<redacted-path>"}
+			if appID != 0 && appName != "" {
+				apps, err := store.LoadApps()
+				if err != nil {
+					return err
+				}
+				slug := config.Slug(appName)
+				apps.Apps[slug] = config.App{ID: appID, Name: appName, DefaultCountries: parseCSV(countries), DefaultBid: bid, DefaultCPAGoal: cpa}
+				apps.ActiveApp = slug
+				if err := store.SaveApps(apps); err != nil {
+					return err
+				}
+				result["active_app"] = slug
+			}
+			return ctx.Print(result)
+		},
+	}
+	cmd.Flags().StringVar(&vault, "vault", "Private", "1Password vault")
+	cmd.Flags().StringVar(&item, "item", "Apple Ads API", "1Password item containing org_id, client_id, team_id, key_id")
+	cmd.Flags().StringVar(&keyDocument, "key-document", "Apple Ads API Private Key", "1Password document containing private-key.pem; empty to skip download")
+	cmd.Flags().StringVar(&keyPath, "private-key", "", "local private key output path; defaults to config dir")
+	cmd.Flags().Int64Var(&appID, "app-id", 0, "optional app adam ID to configure")
+	cmd.Flags().StringVar(&appName, "app-name", "", "optional app name to configure")
+	cmd.Flags().StringVar(&countries, "countries", "US", "default app countries")
+	cmd.Flags().Float64Var(&bid, "bid", 1.50, "default app bid")
+	cmd.Flags().Float64Var(&cpa, "cpa-goal", 0, "default app CPA goal")
+	return cmd
+}
+
+func opRead(vault, item, field string) (string, error) {
+	cmd := exec.Command("op", "read", opRef(vault, item, field))
+	data, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("read %s from 1Password: %w: %s", field, err, trimCommandOutput(data))
+	}
+	return trimCommandOutput(data), nil
 }
 
 func redact(s string) string {

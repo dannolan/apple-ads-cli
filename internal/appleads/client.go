@@ -29,6 +29,7 @@ type Client struct {
 	HTTP        *http.Client
 	Creds       config.Credentials
 	BaseURL     string
+	TokenURL    string
 	token       string
 	tokenExpiry time.Time
 }
@@ -50,9 +51,10 @@ type Page struct {
 
 func NewClient(creds config.Credentials) *Client {
 	return &Client{
-		HTTP:    &http.Client{Timeout: 60 * time.Second},
-		Creds:   creds,
-		BaseURL: APIBaseURL,
+		HTTP:     &http.Client{Timeout: 60 * time.Second},
+		Creds:    creds,
+		BaseURL:  APIBaseURL,
+		TokenURL: TokenURL,
 	}
 }
 
@@ -164,7 +166,7 @@ func (c *Client) accessToken() (string, error) {
 	form.Set("client_id", c.Creds.ClientID)
 	form.Set("client_secret", secret)
 	form.Set("scope", "searchadsorg")
-	resp, err := c.HTTP.PostForm(TokenURL, form)
+	resp, err := c.HTTP.PostForm(c.TokenURL, form)
 	if err != nil {
 		return "", err
 	}

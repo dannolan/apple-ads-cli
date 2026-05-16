@@ -35,8 +35,34 @@ func newACLCommand(ctx *appContext) *cobra.Command {
 	searchApps.Flags().StringVar(&term, "query", "", "app search query")
 	_ = searchApps.MarkFlagRequired("query")
 	cmd.AddCommand(searchApps)
-	cmd.AddCommand(idGet(ctx, "eligibility <app-id>", "/apps/%s/eligibility", false))
+	cmd.AddCommand(eligibilityCommand(ctx))
 	cmd.AddCommand(simpleGet(ctx, "countries", "/countries-or-regions", false))
+	return cmd
+}
+
+func eligibilityCommand(ctx *appContext) *cobra.Command {
+	var conditions string
+	cmd := &cobra.Command{
+		Use:   "eligibility <app-id>",
+		Short: "Check app advertising eligibility",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body := map[string]any{}
+			if parsed := parseCSV(conditions); len(parsed) > 0 {
+				body["conditions"] = parsed
+			}
+			client, err := ctx.Client()
+			if err != nil {
+				return err
+			}
+			resp, err := client.Request(appleads.RequestOptions{Method: http.MethodPost, Path: fmt.Sprintf("/apps/%s/eligibilities/find", args[0]), Body: body})
+			if err != nil {
+				return err
+			}
+			return ctx.Print(resp)
+		},
+	}
+	cmd.Flags().StringVar(&conditions, "conditions", "", "optional eligibility conditions, comma separated")
 	return cmd
 }
 
@@ -423,11 +449,11 @@ func keywordUpdateBid(ctx *appContext) *cobra.Command {
 func newReportsCommand(ctx *appContext) *cobra.Command {
 	cmd := &cobra.Command{Use: "reports", Short: "Generate Apple Ads reports"}
 	cmd.AddCommand(reportCommand(ctx, "summary", "/reports/campaigns", "CAMPAIGN"))
-	cmd.AddCommand(reportCommand(ctx, "keywords", "/reports/campaigns/%s/adgroups/%s/targetingkeywords", "KEYWORD"))
+	cmd.AddCommand(reportCommand(ctx, "keywords", "/reports/campaigns/%s/keywords", "KEYWORD"))
 	cmd.AddCommand(reportCommand(ctx, "adgroups", "/reports/campaigns/%s/adgroups", "ADGROUP"))
-	cmd.AddCommand(reportCommand(ctx, "search-terms", "/reports/campaigns/%s/adgroups/%s/searchterms", "SEARCHTERM"))
-	cmd.AddCommand(reportCommand(ctx, "ads", "/reports/campaigns/%s/adgroups/%s/ads", "AD"))
-	cmd.AddCommand(reportCommand(ctx, "impression-share", "/reports/campaigns/%s/searchterms/insights", "SEARCHTERM"))
+	cmd.AddCommand(reportCommand(ctx, "search-terms", "/reports/campaigns/%s/searchterms", "SEARCHTERM"))
+	cmd.AddCommand(reportCommand(ctx, "ads", "/reports/campaigns/%s/ads", "AD"))
+	cmd.AddCommand(reportCommand(ctx, "impression-share", "/reports/campaigns/%s/keywords", "KEYWORD"))
 	cmd.AddCommand(customReport(ctx), simpleGet(ctx, "custom-list", "/custom-reports", false), idGet(ctx, "custom-get <report-id>", "/custom-reports/%s", false))
 	cmd.AddCommand(campaignAdGroupList(ctx, "bid-recommendations <campaign-id> <adgroup-id>", "/campaigns/%s/adgroups/%s/targetingkeywords/recommendations"))
 	return cmd
@@ -450,12 +476,16 @@ func reportCommand(ctx *appContext, use, pathTemplate, selector string) *cobra.C
 				start = startDate.Format("2006-01-02")
 				end = endDate.Format("2006-01-02")
 			}
+			timeZone := "UTC"
+			if strings.Contains(path, "searchterms") {
+				timeZone = "ORTZ"
+			}
 			body := map[string]any{
 				"startTime":         start,
 				"endTime":           end,
 				"selector":          map[string]any{"orderBy": []map[string]any{{"field": "localSpend", "sortOrder": "DESCENDING"}}, "pagination": map[string]any{"offset": 0, "limit": 1000}},
 				"groupBy":           []string{selector},
-				"timeZone":          "UTC",
+				"timeZone":          timeZone,
 				"returnRowTotals":   true,
 				"returnGrandTotals": true,
 			}
@@ -681,7 +711,7 @@ func appProductPages(ctx *appContext) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resp, err := client.Request(appleads.RequestOptions{Method: http.MethodGet, Path: fmt.Sprintf("/product-pages/%d", app.ID)})
+			resp, err := client.Request(appleads.RequestOptions{Method: http.MethodGet, Path: fmt.Sprintf("/apps/%d/product-pages", app.ID)})
 			if err != nil {
 				return err
 			}
