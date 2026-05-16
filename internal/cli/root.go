@@ -38,6 +38,7 @@ func NewRootCommandWithContext() (*cobra.Command, *appContext) {
 		newAdGroupsCommand(ctx),
 		newKeywordsCommand(ctx),
 		newReportsCommand(ctx),
+		newAccountCommand(ctx),
 		newBudgetCommand(ctx),
 		newGeoCommand(ctx),
 		newAdsCommand(ctx),

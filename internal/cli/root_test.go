@@ -346,3 +346,39 @@ func TestCampaignUpdatePayloadDefaultsGeoClearFlagForCountryUpdates(t *testing.T
 		t.Fatalf("expected default geo clearing flag for country updates: %#v", payload)
 	}
 }
+
+func TestFilterExistingKeywordsSkipsTextAndMatchTypeDuplicates(t *testing.T) {
+	requested := []map[string]any{
+		{"text": "deal finder", "matchType": "EXACT"},
+		{"text": "cheap deals", "matchType": "BROAD"},
+	}
+	existing := []map[string]any{
+		{"text": " Deal Finder ", "matchType": "exact"},
+	}
+	planned, skipped := filterExistingKeywords(requested, existing)
+	if len(planned) != 1 || planned[0]["text"] != "cheap deals" {
+		t.Fatalf("unexpected planned keywords: %#v", planned)
+	}
+	if len(skipped) != 1 || skipped[0]["text"] != "deal finder" {
+		t.Fatalf("unexpected skipped keywords: %#v", skipped)
+	}
+}
+
+func TestCampaignTypeIgnoresArchivedPrefix(t *testing.T) {
+	got := campaignType(map[string]any{"name": "ARCHIVED - DealBlaster Discovery"})
+	if got != "discovery" {
+		t.Fatalf("expected discovery campaign type, got %q", got)
+	}
+}
+
+func TestIsRunningChecksStatusFamily(t *testing.T) {
+	if !isRunning(map[string]any{"status": "ENABLED"}) {
+		t.Fatal("expected ENABLED status to count as running")
+	}
+	if !isRunning(map[string]any{"displayStatus": "RUNNING"}) {
+		t.Fatal("expected RUNNING displayStatus to count as running")
+	}
+	if isRunning(map[string]any{"status": "PAUSED", "displayStatus": "PAUSED"}) {
+		t.Fatal("did not expect paused campaign to count as running")
+	}
+}

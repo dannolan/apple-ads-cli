@@ -25,6 +25,8 @@ ads smoke --json
 ads acl me --json
 ads campaigns list --json
 ads campaigns audit --json
+ads campaigns health --days 3 --json
+ads account snapshot --days 7 --json
 ```
 
 If credentials or app config are missing:
@@ -43,6 +45,7 @@ ads reports summary --days 7 --json
 ads reports adgroups <campaign-id> --days 7 --json
 ads reports keywords <campaign-id> --days 14 --json
 ads reports search-terms <campaign-id> --days 14 --json
+ads reports diagnose <campaign-id> --days 7 --json
 ```
 
 Use `--table` only for human scanning. Keep `--json` for agent decisions and parsing.
@@ -61,8 +64,8 @@ ads reports custom-get <report-id> --json
 Every mutation follows this two-step pattern:
 
 ```bash
-ads keywords add <campaign-id> <adgroup-id> --text "term one,term two" --match EXACT --bid 1.50 --json
-ads keywords add <campaign-id> <adgroup-id> --text "term one,term two" --match EXACT --bid 1.50 --apply --json
+ads keywords add <campaign-id> <adgroup-id> --text "term one,term two" --match EXACT --bid 1.50 --skip-existing --json
+ads keywords add <campaign-id> <adgroup-id> --text "term one,term two" --match EXACT --bid 1.50 --skip-existing --apply --json
 ads campaigns set-budget <campaign-id> --amount 20 --json
 ads campaigns set-countries <campaign-id> --countries AU,US --json
 ads campaigns rename <campaign-id> --name "ARCHIVED - Discovery" --json

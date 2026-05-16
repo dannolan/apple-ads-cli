@@ -168,6 +168,8 @@ ads config show --json
 ads acl me --json
 ads campaigns list --json
 ads campaigns audit --json
+ads campaigns health --days 3 --json
+ads account snapshot --days 7 --json
 ```
 
 ### Report 📈
@@ -177,6 +179,7 @@ ads reports summary --days 7 --json
 ads reports keywords <campaign-id> --days 14 --json
 ads reports search-terms <campaign-id> --days 14 --json
 ads reports impression-share <campaign-id> --days 14 --json
+ads reports diagnose <campaign-id> --days 7 --json
 ```
 
 ### Plan 🧾
@@ -185,7 +188,7 @@ Mutating commands return a dry-run payload until `--apply` is present.
 
 ```bash
 ads campaigns setup --prefix "My App" --countries US --daily-budget 50 --json
-ads keywords add <campaign-id> <adgroup-id> --text "term one,term two" --match EXACT --bid 1.50 --json
+ads keywords add <campaign-id> <adgroup-id> --text "term one,term two" --match EXACT --bid 1.50 --skip-existing --json
 ads keywords add-negatives <campaign-id> --text "bad term" --match EXACT --json
 ads campaigns pause <campaign-id> --json
 ```
@@ -214,10 +217,11 @@ ads reports summary --days 1 --json
 | --- | --- |
 | Config | `ads config init`, `show`, `test`, `app add`, `app list`, `app use`, `from-1password` |
 | Access | `ads acl list`, `me`, `search-apps`, `eligibility`, `countries` |
-| Campaigns | `ads campaigns list`, `get`, `audit`, `setup`, `create`, `update`, `pause`, `enable`, `delete` |
+| Campaigns | `ads campaigns list`, `get`, `audit`, `health`, `setup`, `create`, `update`, `pause`, `enable`, `delete` |
 | Ad groups | `ads adgroups list`, `create`, `pause`, `enable`, `delete` |
 | Keywords | `ads keywords list`, `add`, `add-negatives`, `find`, `update-bid`, `pause`, `enable`, `delete`, `list-negatives`, `delete-negative` |
-| Reports | `ads reports summary`, `adgroups`, `keywords`, `search-terms`, `ads`, `impression-share`, `bid-recommendations`, `custom`, `custom-list`, `custom-get` |
+| Reports | `ads reports summary`, `adgroups`, `keywords`, `search-terms`, `ads`, `impression-share`, `diagnose`, `bid-recommendations`, `custom`, `custom-list`, `custom-get` |
+| Account | `ads account snapshot` |
 | Budget | `ads budget list`, `get`, `status`, `create` |
 | Geo | `ads geo search`, `show`, `set` |
 | Ads and creatives | `ads ads list`, `create`, `delete`, `creative`, `creatives`, `product-pages`, `rejections` |

@@ -73,7 +73,7 @@ func newCampaignsCommand(ctx *appContext) *cobra.Command {
 	cmd.AddCommand(campaignStatusCommand(ctx, "pause <campaign-id>", "PAUSED"))
 	cmd.AddCommand(campaignStatusCommand(ctx, "enable <campaign-id>", "ENABLED"))
 	cmd.AddCommand(deleteCommand(ctx, "delete <campaign-id>", "/campaigns/%s"))
-	cmd.AddCommand(campaignCreate(ctx), campaignUpdate(ctx), campaignRename(ctx), campaignSetBudget(ctx), campaignSetCountries(ctx), campaignAudit(ctx), campaignSetup(ctx))
+	cmd.AddCommand(campaignCreate(ctx), campaignUpdate(ctx), campaignRename(ctx), campaignSetBudget(ctx), campaignSetCountries(ctx), campaignAudit(ctx), campaignHealth(ctx), campaignSetup(ctx))
 	return cmd
 }
 
@@ -284,22 +284,44 @@ func campaignAudit(ctx *appContext) *cobra.Command {
 				return err
 			}
 			expected := []string{"brand", "category", "competitor", "discovery"}
-			found := map[string]bool{}
+			found := map[string]string{}
+			running := map[string]string{}
+			findings := []map[string]any{}
 			for _, c := range campaigns {
-				name := strings.ToLower(fmt.Sprint(c["name"]))
-				for _, e := range expected {
-					if strings.Contains(name, e) {
-						found[e] = true
+				typ := campaignType(c)
+				if typ != "" {
+					found[typ] = idString(c["id"])
+					if isRunning(c) {
+						running[typ] = idString(c["id"])
 					}
+				}
+				name := fmt.Sprint(c["name"])
+				if strings.HasPrefix(strings.ToLower(strings.TrimSpace(name)), "archived") && isRunning(c) {
+					findings = append(findings, finding("warning", "archived_campaign_running", "Archived campaign is enabled or serving", idString(c["id"]), map[string]any{"name": name}))
 				}
 			}
 			missing := []string{}
+			pausedTypes := []string{}
 			for _, e := range expected {
-				if !found[e] {
+				if found[e] == "" {
 					missing = append(missing, e)
+					continue
+				}
+				if running[e] == "" {
+					pausedTypes = append(pausedTypes, e)
 				}
 			}
-			return ctx.Print(map[string]any{"ok": len(missing) == 0, "missing_campaign_types": missing, "campaign_count": len(campaigns), "campaigns": campaigns})
+			ok := len(missing) == 0 && len(pausedTypes) == 0 && len(findings) == 0
+			return ctx.Print(map[string]any{
+				"ok":                     ok,
+				"missing_campaign_types": missing,
+				"paused_campaign_types":  pausedTypes,
+				"found_campaign_types":   found,
+				"running_campaign_types": running,
+				"campaign_count":         len(campaigns),
+				"findings":               findings,
+				"campaigns":              campaigns,
+			})
 		},
 	}
 }
@@ -449,7 +471,7 @@ func newKeywordsCommand(ctx *appContext) *cobra.Command {
 func keywordAdd(ctx *appContext) *cobra.Command {
 	var texts, matchType string
 	var bid float64
-	var apply bool
+	var apply, skipExisting bool
 	cmd := &cobra.Command{
 		Use:   "add <campaign-id> <adgroup-id>",
 		Short: "Add targeting keywords in bulk",
@@ -459,10 +481,30 @@ func keywordAdd(ctx *appContext) *cobra.Command {
 			for _, text := range parseCSV(texts) {
 				items = append(items, map[string]any{"text": text, "matchType": strings.ToUpper(matchType), "bidAmount": money(bid, ctx.DefaultCurrency())})
 			}
+			skipped := []map[string]any{}
+			if skipExisting {
+				client, err := ctx.Client()
+				if err != nil {
+					return err
+				}
+				existing, err := client.Paginate(fmt.Sprintf("/campaigns/%s/adgroups/%s/targetingkeywords", args[0], args[1]), nil)
+				if err != nil {
+					return err
+				}
+				items, skipped = filterExistingKeywords(items, existing)
+			}
 			body := items
 			path := fmt.Sprintf("/campaigns/%s/adgroups/%s/targetingkeywords/bulk", args[0], args[1])
 			if !apply {
-				return ctx.Print(dryRunPayload("POST", path, body))
+				payload := dryRunPayload("POST", path, body)
+				if skipExisting {
+					payload["skipped_existing"] = skipped
+					payload["planned_count"] = len(items)
+				}
+				return ctx.Print(payload)
+			}
+			if len(items) == 0 {
+				return ctx.Print(map[string]any{"ok": true, "created": 0, "skipped_existing": skipped, "note": "no new keywords to add"})
 			}
 			client, err := ctx.Client()
 			if err != nil {
@@ -479,6 +521,7 @@ func keywordAdd(ctx *appContext) *cobra.Command {
 	cmd.Flags().StringVar(&matchType, "match", "EXACT", "EXACT or BROAD")
 	cmd.Flags().Float64Var(&bid, "bid", 1.50, "keyword bid")
 	cmd.Flags().BoolVar(&apply, "apply", false, "execute mutation")
+	cmd.Flags().BoolVar(&skipExisting, "skip-existing", false, "fetch ad group keywords and skip duplicate text/matchType pairs")
 	_ = cmd.MarkFlagRequired("text")
 	return cmd
 }
@@ -608,6 +651,7 @@ func newReportsCommand(ctx *appContext) *cobra.Command {
 	cmd.AddCommand(reportCommand(ctx, "search-terms", "/reports/campaigns/%s/searchterms"))
 	cmd.AddCommand(reportCommand(ctx, "ads", "/reports/campaigns/%s/ads"))
 	cmd.AddCommand(reportCommand(ctx, "impression-share", "/reports/campaigns/%s/keywords"))
+	cmd.AddCommand(reportDiagnose(ctx))
 	cmd.AddCommand(customReport(ctx), simpleGet(ctx, "custom-list", "/custom-reports", false), idGet(ctx, "custom-get <report-id>", "/custom-reports/%s", false))
 	cmd.AddCommand(campaignAdGroupList(ctx, "bid-recommendations <campaign-id> <adgroup-id>", "/campaigns/%s/adgroups/%s/targetingkeywords/recommendations"))
 	return cmd
@@ -918,17 +962,19 @@ func newOptimizeCommand(ctx *appContext) *cobra.Command {
 			if apply {
 				return fmt.Errorf("optimize is intentionally plan-only in the Go agent CLI; execute individual keyword mutations after reviewing the plan")
 			}
-			return ctx.Print(map[string]any{
-				"dry_run": true,
-				"days":    days,
-				"workflow": []string{
-					"Run reports search-terms for Discovery ad groups.",
-					"Promote winners with >=2 installs and CPA within goal using keywords add.",
-					"Add Discovery negatives for promoted exact terms.",
-					"Block losers with spend and zero installs using keywords add-negatives.",
-					"Verify with reports summary and keyword reports.",
-				},
-			})
+			app, _, err := ctx.ActiveApp()
+			if err != nil {
+				return err
+			}
+			client, err := ctx.Client()
+			if err != nil {
+				return err
+			}
+			plan, err := buildOptimizePlan(client, app.DefaultCPAGoal, days)
+			if err != nil {
+				return err
+			}
+			return ctx.Print(plan)
 		},
 	}
 	cmd.Flags().IntVar(&days, "days", 14, "lookback window for the optimization workflow")
