@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/dannolan/apple-ads-cli/internal/appleads"
 	"github.com/dannolan/apple-ads-cli/internal/config"
@@ -17,6 +18,7 @@ type appContext struct {
 	AppSlug   string
 	JSON      bool
 	Pretty    bool
+	Table     bool
 	Out       io.Writer
 	Err       io.Writer
 	store     *config.Store
@@ -54,10 +56,23 @@ func (a *appContext) ActiveApp() (config.App, string, error) {
 	return store.ActiveApp(a.AppSlug)
 }
 
+func (a *appContext) DefaultCurrency() string {
+	app, _, err := a.ActiveApp()
+	if err == nil && strings.TrimSpace(app.DefaultCurrency) != "" {
+		return strings.ToUpper(strings.TrimSpace(app.DefaultCurrency))
+	}
+	return "USD"
+}
+
 func (a *appContext) Print(value any) error {
 	out := a.Out
 	if out == nil {
 		out = os.Stdout
+	}
+	if a.Table && !a.JSON {
+		if ok, err := a.printTable(out, value); ok || err != nil {
+			return err
+		}
 	}
 	indent := ""
 	if a.Pretty || !a.JSON {
@@ -75,6 +90,158 @@ func (a *appContext) Print(value any) error {
 	}
 	_, err = fmt.Fprintln(out, string(data))
 	return err
+}
+
+func (a *appContext) printTable(out io.Writer, value any) (bool, error) {
+	rows, ok := tableRows(value)
+	if !ok {
+		return false, nil
+	}
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	if len(rows) == 0 {
+		_, err := fmt.Fprintln(w, "no rows")
+		if err != nil {
+			return true, err
+		}
+		return true, w.Flush()
+	}
+	cols := tableColumns(rows)
+	_, _ = fmt.Fprintln(w, strings.Join(cols, "\t"))
+	for _, row := range rows {
+		values := make([]string, len(cols))
+		for i, col := range cols {
+			values[i] = tableCell(row[col])
+		}
+		_, _ = fmt.Fprintln(w, strings.Join(values, "\t"))
+	}
+	return true, w.Flush()
+}
+
+func tableRows(value any) ([]map[string]any, bool) {
+	m, ok := value.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	if rows, ok := sliceMaps(m["data"]); ok {
+		return rows, true
+	}
+	if rows, ok := sliceMaps(m["campaigns"]); ok {
+		return rows, true
+	}
+	if data, ok := m["data"].(map[string]any); ok {
+		if response, ok := data["reportingDataResponse"].(map[string]any); ok {
+			if rows, ok := sliceMaps(response["row"]); ok {
+				return reportRows(rows), true
+			}
+		}
+	}
+	return nil, false
+}
+
+func sliceMaps(value any) ([]map[string]any, bool) {
+	if rows, ok := value.([]map[string]any); ok {
+		return rows, true
+	}
+	raw, ok := value.([]any)
+	if !ok {
+		return nil, false
+	}
+	rows := make([]map[string]any, 0, len(raw))
+	for _, item := range raw {
+		if row, ok := item.(map[string]any); ok {
+			rows = append(rows, row)
+		}
+	}
+	return rows, true
+}
+
+func reportRows(rows []map[string]any) []map[string]any {
+	out := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		flat := map[string]any{}
+		if metadata, ok := row["metadata"].(map[string]any); ok {
+			for k, v := range metadata {
+				flat[k] = v
+			}
+		}
+		if total, ok := row["total"].(map[string]any); ok {
+			for _, key := range []string{"impressions", "taps", "tapInstalls", "localSpend", "avgCPT", "tapInstallCPI", "ttr", "tapInstallRate"} {
+				if v, ok := total[key]; ok {
+					flat[key] = v
+				}
+			}
+		}
+		out = append(out, flat)
+	}
+	return out
+}
+
+func tableColumns(rows []map[string]any) []string {
+	preferred := []string{
+		"name", "id", "status", "displayStatus", "servingStatus", "countriesOrRegions", "dailyBudgetAmount",
+		"campaignName", "campaignId", "adGroupName", "adGroupId", "keyword", "text", "matchType",
+		"localSpend", "taps", "tapInstalls", "tapInstallCPI", "impressions", "ttr", "tapInstallRate",
+	}
+	seen := map[string]bool{}
+	cols := []string{}
+	for _, col := range preferred {
+		for _, row := range rows {
+			if _, ok := row[col]; ok {
+				cols = append(cols, col)
+				seen[col] = true
+				break
+			}
+		}
+	}
+	for _, row := range rows {
+		for col := range row {
+			if !seen[col] && len(cols) < 12 {
+				cols = append(cols, col)
+				seen[col] = true
+			}
+		}
+	}
+	return cols
+}
+
+func tableCell(value any) string {
+	switch v := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return v
+	case float64:
+		if v == float64(int64(v)) {
+			return fmt.Sprintf("%.0f", v)
+		}
+		return fmt.Sprintf("%g", v)
+	case int:
+		return fmt.Sprintf("%d", v)
+	case int64:
+		return fmt.Sprintf("%d", v)
+	case bool:
+		return fmt.Sprintf("%t", v)
+	case []any:
+		parts := make([]string, 0, len(v))
+		for _, item := range v {
+			parts = append(parts, tableCell(item))
+		}
+		return strings.Join(parts, ",")
+	case map[string]any:
+		if amount, ok := v["amount"]; ok {
+			if currency, ok := v["currency"]; ok {
+				return fmt.Sprintf("%v %v", amount, currency)
+			}
+			return fmt.Sprintf("%v", amount)
+		}
+		data, err := json.Marshal(v)
+		if err == nil {
+			return string(data)
+		}
+		return fmt.Sprintf("%v", v)
+	default:
+		return fmt.Sprintf("%v", v)
+	}
 }
 
 func (a *appContext) PrintError(err error) error {

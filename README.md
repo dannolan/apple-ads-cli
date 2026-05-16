@@ -117,6 +117,7 @@ ads config app add \
   --app-id 1234567890 \
   --name "My App" \
   --countries US,CA,GB \
+  --currency USD \
   --bid 1.50 \
   --cpa-goal 5.00
 ```
@@ -150,6 +151,7 @@ ads config from-1password \
   --app-id 1234567890 \
   --app-name "My App" \
   --countries US \
+  --currency USD \
   --json
 
 ads smoke --json
@@ -235,7 +237,10 @@ ads manifest --json
 ads campaigns audit --json
 ads campaigns setup --prefix "My App" --countries US --daily-budget 50 --json
 ads campaigns setup --prefix "My App" --countries US --daily-budget 50 --apply --json
-ads campaigns update <campaign-id> --body '{"dailyBudgetAmount":{"amount":"75.00","currency":"USD"}}' --apply --json
+ads campaigns update <campaign-id> --body '{"dailyBudgetAmount":{"amount":"20.00","currency":"AUD"}}' --apply --json
+ads campaigns rename <campaign-id> --name "ARCHIVED - Discovery" --json
+ads campaigns set-budget <campaign-id> --amount 20 --json
+ads campaigns set-countries <campaign-id> --countries AU,US --json
 ```
 
 ### Keyword Operations 🔑
@@ -245,6 +250,8 @@ ads keywords list <campaign-id> <adgroup-id> --json
 ads keywords add <campaign-id> <adgroup-id> --text "brand,my app" --match EXACT --bid 1.50 --json
 ads keywords add-negatives <campaign-id> --text "free coins,testflight" --match EXACT --apply --json
 ads keywords find --text "photo" --json
+ads adgroups set-bid <campaign-id> <adgroup-id> --bid 2.00 --json
+ads keywords set-bid <campaign-id> <adgroup-id> <keyword-id> --bid 2.25 --json
 ads keywords update-bid <campaign-id> <adgroup-id> <keyword-id> --bid 2.25 --apply --json
 ```
 
@@ -257,6 +264,14 @@ ads reports keywords <campaign-id> --days 14 --json
 ads reports search-terms <campaign-id> --days 14 --json
 ads reports ads <campaign-id> --days 14 --json
 ads reports bid-recommendations <campaign-id> <adgroup-id> --json
+```
+
+Use `--table` for human-readable scans while keeping `--json` for agents:
+
+```bash
+ads campaigns list --table
+ads reports summary --days 7 --table
+ads keywords list <campaign-id> <adgroup-id> --table
 ```
 
 ### Budget, Geo, And Ads 💸
@@ -279,8 +294,8 @@ Use this when Apple exposes something before the typed CLI wraps it. Same auth, 
 ```bash
 ads api GET /campaigns --query limit=100 --json
 ads api POST /reports/campaigns --body @body.json --json
-ads api PUT /campaigns/123 --body '{"status":"PAUSED"}' --json
-ads api PUT /campaigns/123 --body '{"status":"PAUSED"}' --apply --json
+ads api PUT /campaigns/123 --body '{"campaign":{"status":"PAUSED"}}' --json
+ads api PUT /campaigns/123 --body '{"campaign":{"status":"PAUSED"}}' --apply --json
 ads api GET /me --no-org-context --json
 ```
 

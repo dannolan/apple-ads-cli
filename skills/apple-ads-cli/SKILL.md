@@ -32,9 +32,11 @@ ads campaigns audit --json
 ```bash
 ads reports summary --days 7 --json
 ads reports adgroups <campaign-id> --days 7 --json
-ads reports keywords <campaign-id> <adgroup-id> --days 14 --json
-ads reports search-terms <campaign-id> <adgroup-id> --days 14 --json
+ads reports keywords <campaign-id> --days 14 --json
+ads reports search-terms <campaign-id> --days 14 --json
 ```
+
+Use `--table` only for human scanning. Keep `--json` for agent decisions and parsing.
 
 ## Mutation Pattern
 
@@ -42,6 +44,11 @@ ads reports search-terms <campaign-id> <adgroup-id> --days 14 --json
 ads keywords add <campaign-id> <adgroup-id> --text "term one,term two" --match EXACT --bid 1.50 --json
 ads keywords add <campaign-id> <adgroup-id> --text "term one,term two" --match EXACT --bid 1.50 --apply --json
 ads keywords list <campaign-id> <adgroup-id> --json
+ads campaigns set-budget <campaign-id> --amount 20 --json
+ads campaigns set-countries <campaign-id> --countries AU,US --json
+ads campaigns rename <campaign-id> --name "ARCHIVED - Discovery" --json
+ads adgroups set-bid <campaign-id> <adgroup-id> --bid 2.00 --json
+ads keywords set-bid <campaign-id> <adgroup-id> <keyword-id> --bid 2.00 --json
 ```
 
 ## Campaign Structure

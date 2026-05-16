@@ -26,6 +26,7 @@ type App struct {
 	DefaultCountries []string `json:"default_countries"`
 	DefaultBid       float64  `json:"default_bid"`
 	DefaultCPAGoal   float64  `json:"default_cpa_goal,omitempty"`
+	DefaultCurrency  string   `json:"default_currency,omitempty"`
 }
 
 type AppsConfig struct {

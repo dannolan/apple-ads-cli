@@ -29,6 +29,7 @@ func NewRootCommandWithContext() (*cobra.Command, *appContext) {
 	root.PersistentFlags().StringVar(&ctx.AppSlug, "app", "", "configured app slug to operate on")
 	root.PersistentFlags().BoolVar(&ctx.JSON, "json", false, "emit compact JSON")
 	root.PersistentFlags().BoolVar(&ctx.Pretty, "pretty", true, "pretty-print JSON output")
+	root.PersistentFlags().BoolVar(&ctx.Table, "table", false, "emit table output for common list and report responses")
 	root.AddCommand(
 		newConfigCommand(ctx),
 		newAPICommand(ctx),

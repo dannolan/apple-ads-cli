@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/dannolan/apple-ads-cli/internal/config"
 	"github.com/spf13/cobra"
@@ -77,7 +78,7 @@ func newConfigCommand(ctx *appContext) *cobra.Command {
 
 	app := &cobra.Command{Use: "app", Short: "Manage configured apps"}
 	var appID int64
-	var name, countries string
+	var name, countries, currency string
 	var bid, cpa float64
 	add := &cobra.Command{
 		Use:   "add",
@@ -92,7 +93,7 @@ func newConfigCommand(ctx *appContext) *cobra.Command {
 				return err
 			}
 			slug := config.Slug(name)
-			apps.Apps[slug] = config.App{ID: appID, Name: name, DefaultCountries: parseCSV(countries), DefaultBid: bid, DefaultCPAGoal: cpa}
+			apps.Apps[slug] = config.App{ID: appID, Name: name, DefaultCountries: parseCSV(countries), DefaultBid: bid, DefaultCPAGoal: cpa, DefaultCurrency: normalizeCurrency(currency)}
 			apps.ActiveApp = slug
 			if err := store.SaveApps(apps); err != nil {
 				return err
@@ -103,6 +104,7 @@ func newConfigCommand(ctx *appContext) *cobra.Command {
 	add.Flags().Int64Var(&appID, "app-id", 0, "Apple app adam ID")
 	add.Flags().StringVar(&name, "name", "", "app name")
 	add.Flags().StringVar(&countries, "countries", "US", "default countries, comma separated")
+	add.Flags().StringVar(&currency, "currency", "USD", "default money currency")
 	add.Flags().Float64Var(&bid, "bid", 1.50, "default keyword bid")
 	add.Flags().Float64Var(&cpa, "cpa-goal", 0, "default CPA goal")
 	_ = add.MarkFlagRequired("app-id")
@@ -152,7 +154,7 @@ func newConfigCommand(ctx *appContext) *cobra.Command {
 
 func onePasswordCommand(ctx *appContext) *cobra.Command {
 	var vault, item, keyDocument, keyPath string
-	var appName, countries string
+	var appName, countries, currency string
 	var appID int64
 	var bid, cpa float64
 	cmd := &cobra.Command{
@@ -209,7 +211,7 @@ func onePasswordCommand(ctx *appContext) *cobra.Command {
 					return err
 				}
 				slug := config.Slug(appName)
-				apps.Apps[slug] = config.App{ID: appID, Name: appName, DefaultCountries: parseCSV(countries), DefaultBid: bid, DefaultCPAGoal: cpa}
+				apps.Apps[slug] = config.App{ID: appID, Name: appName, DefaultCountries: parseCSV(countries), DefaultBid: bid, DefaultCPAGoal: cpa, DefaultCurrency: normalizeCurrency(currency)}
 				apps.ActiveApp = slug
 				if err := store.SaveApps(apps); err != nil {
 					return err
@@ -226,9 +228,18 @@ func onePasswordCommand(ctx *appContext) *cobra.Command {
 	cmd.Flags().Int64Var(&appID, "app-id", 0, "optional app adam ID to configure")
 	cmd.Flags().StringVar(&appName, "app-name", "", "optional app name to configure")
 	cmd.Flags().StringVar(&countries, "countries", "US", "default app countries")
+	cmd.Flags().StringVar(&currency, "currency", "USD", "default app currency")
 	cmd.Flags().Float64Var(&bid, "bid", 1.50, "default app bid")
 	cmd.Flags().Float64Var(&cpa, "cpa-goal", 0, "default app CPA goal")
 	return cmd
+}
+
+func normalizeCurrency(currency string) string {
+	currency = strings.TrimSpace(strings.ToUpper(currency))
+	if currency == "" {
+		return "USD"
+	}
+	return currency
 }
 
 func opRead(vault, item, field string) (string, error) {

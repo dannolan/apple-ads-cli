@@ -70,10 +70,10 @@ func newCampaignsCommand(ctx *appContext) *cobra.Command {
 	cmd := &cobra.Command{Use: "campaigns", Short: "Inspect and mutate campaigns"}
 	cmd.AddCommand(listEndpoint(ctx, "list", "/campaigns"))
 	cmd.AddCommand(idGet(ctx, "get <campaign-id>", "/campaigns/%s", false))
-	cmd.AddCommand(statusCommand(ctx, "pause <campaign-id>", "/campaigns/%s", "PAUSED"))
-	cmd.AddCommand(statusCommand(ctx, "enable <campaign-id>", "/campaigns/%s", "ENABLED"))
+	cmd.AddCommand(campaignStatusCommand(ctx, "pause <campaign-id>", "PAUSED"))
+	cmd.AddCommand(campaignStatusCommand(ctx, "enable <campaign-id>", "ENABLED"))
 	cmd.AddCommand(deleteCommand(ctx, "delete <campaign-id>", "/campaigns/%s"))
-	cmd.AddCommand(campaignCreate(ctx), campaignUpdate(ctx), campaignAudit(ctx), campaignSetup(ctx))
+	cmd.AddCommand(campaignCreate(ctx), campaignUpdate(ctx), campaignRename(ctx), campaignSetBudget(ctx), campaignSetCountries(ctx), campaignAudit(ctx), campaignSetup(ctx))
 	return cmd
 }
 
@@ -92,7 +92,7 @@ func campaignCreate(ctx *appContext) *cobra.Command {
 			body := map[string]any{
 				"name":                name,
 				"adamId":              app.ID,
-				"dailyBudgetAmount":   money(dailyBudget),
+				"dailyBudgetAmount":   money(dailyBudget, app.DefaultCurrency),
 				"countriesOrRegions":  parseCSV(countries),
 				"status":              "ENABLED",
 				"adChannelType":       "SEARCH",
@@ -135,6 +135,7 @@ func campaignUpdate(ctx *appContext) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			body = campaignUpdatePayload(body)
 			path := fmt.Sprintf("/campaigns/%s", args[0])
 			if !apply {
 				return ctx.Print(dryRunPayload("PUT", path, body))
@@ -154,6 +155,119 @@ func campaignUpdate(ctx *appContext) *cobra.Command {
 	cmd.Flags().BoolVar(&apply, "apply", false, "execute mutation")
 	_ = cmd.MarkFlagRequired("body")
 	return cmd
+}
+
+func campaignRename(ctx *appContext) *cobra.Command {
+	var name string
+	return campaignPatchCommand(ctx, "rename <campaign-id>", "Rename a campaign", func() map[string]any {
+		return map[string]any{"name": name}
+	}, func(cmd *cobra.Command) {
+		cmd.Flags().StringVar(&name, "name", "", "new campaign name")
+		_ = cmd.MarkFlagRequired("name")
+	})
+}
+
+func campaignSetBudget(ctx *appContext) *cobra.Command {
+	var amount float64
+	return campaignPatchCommand(ctx, "set-budget <campaign-id>", "Set campaign daily budget", func() map[string]any {
+		return map[string]any{"dailyBudgetAmount": money(amount, ctx.DefaultCurrency())}
+	}, func(cmd *cobra.Command) {
+		cmd.Flags().Float64Var(&amount, "amount", 0, "daily budget amount")
+		_ = cmd.MarkFlagRequired("amount")
+	})
+}
+
+func campaignSetCountries(ctx *appContext) *cobra.Command {
+	var countries string
+	return campaignPatchCommand(ctx, "set-countries <campaign-id>", "Set campaign countriesOrRegions", func() map[string]any {
+		return map[string]any{"countriesOrRegions": parseCSV(countries)}
+	}, func(cmd *cobra.Command) {
+		cmd.Flags().StringVar(&countries, "countries", "", "countries, comma separated")
+		_ = cmd.MarkFlagRequired("countries")
+	})
+}
+
+func campaignPatchCommand(ctx *appContext, use, short string, body func() map[string]any, configure func(*cobra.Command)) *cobra.Command {
+	var apply bool
+	cmd := &cobra.Command{
+		Use:   use,
+		Short: short,
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			payload := campaignUpdatePayload(body())
+			path := fmt.Sprintf("/campaigns/%s", args[0])
+			if !apply {
+				return ctx.Print(dryRunPayload("PUT", path, payload))
+			}
+			client, err := ctx.Client()
+			if err != nil {
+				return err
+			}
+			resp, err := client.Request(appleads.RequestOptions{Method: http.MethodPut, Path: path, Body: payload})
+			if err != nil {
+				return err
+			}
+			return ctx.Print(resp)
+		},
+	}
+	cmd.Flags().BoolVar(&apply, "apply", false, "execute mutation")
+	if configure != nil {
+		configure(cmd)
+	}
+	return cmd
+}
+
+func campaignStatusCommand(ctx *appContext, use, status string) *cobra.Command {
+	var apply bool
+	cmd := &cobra.Command{
+		Use:  use,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body := campaignUpdatePayload(map[string]any{"status": status})
+			path := fmt.Sprintf("/campaigns/%s", args[0])
+			if !apply {
+				return ctx.Print(dryRunPayload("PUT", path, body))
+			}
+			client, err := ctx.Client()
+			if err != nil {
+				return err
+			}
+			resp, err := client.Request(appleads.RequestOptions{Method: http.MethodPut, Path: path, Body: body})
+			if err != nil {
+				return err
+			}
+			return ctx.Print(resp)
+		},
+	}
+	cmd.Flags().BoolVar(&apply, "apply", false, "execute mutation")
+	return cmd
+}
+
+func campaignUpdatePayload(body any) any {
+	m, ok := body.(map[string]any)
+	if !ok {
+		return body
+	}
+	if _, ok := m["campaign"]; ok {
+		return m
+	}
+	out := map[string]any{}
+	campaign := map[string]any{}
+	for k, v := range m {
+		switch k {
+		case "clearGeoTargetingOnCountryOrRegionChange":
+			out[k] = v
+		default:
+			campaign[k] = v
+		}
+	}
+	if _, changesCountries := campaign["countriesOrRegions"]; changesCountries {
+		if _, hasGeoClearFlag := out["clearGeoTargetingOnCountryOrRegionChange"]; !hasGeoClearFlag {
+			out["clearGeoTargetingOnCountryOrRegionChange"] = false
+		}
+	}
+	out["campaign"] = campaign
+	return out
 }
 
 func campaignAudit(ctx *appContext) *cobra.Command {
@@ -208,7 +322,7 @@ func campaignSetup(ctx *appContext) *cobra.Command {
 				plans = append(plans, map[string]any{
 					"name":               strings.TrimSpace(prefix + " " + typ),
 					"adamId":             app.ID,
-					"dailyBudgetAmount":  money(dailyBudget),
+					"dailyBudgetAmount":  money(dailyBudget, app.DefaultCurrency),
 					"countriesOrRegions": parseCSV(countries),
 					"status":             "ENABLED",
 					"adChannelType":      "SEARCH",
@@ -245,6 +359,7 @@ func newAdGroupsCommand(ctx *appContext) *cobra.Command {
 	cmd := &cobra.Command{Use: "adgroups", Short: "Manage campaign ad groups"}
 	cmd.AddCommand(campaignChildList(ctx, "list <campaign-id>", "/campaigns/%s/adgroups"))
 	cmd.AddCommand(adGroupCreate(ctx))
+	cmd.AddCommand(adGroupSetBid(ctx))
 	cmd.AddCommand(statusCommand(ctx, "pause <campaign-id> <adgroup-id>", "/campaigns/%s/adgroups/%s", "PAUSED"))
 	cmd.AddCommand(statusCommand(ctx, "enable <campaign-id> <adgroup-id>", "/campaigns/%s/adgroups/%s", "ENABLED"))
 	cmd.AddCommand(deleteCommand(ctx, "delete <campaign-id> <adgroup-id>", "/campaigns/%s/adgroups/%s"))
@@ -261,7 +376,7 @@ func adGroupCreate(ctx *appContext) *cobra.Command {
 		Short: "Create an ad group",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			body := map[string]any{"name": name, "status": "ENABLED", "defaultBidAmount": money(bid), "automatedKeywordsOptIn": searchMatch}
+			body := map[string]any{"name": name, "status": "ENABLED", "defaultBidAmount": money(bid, ctx.DefaultCurrency()), "automatedKeywordsOptIn": searchMatch}
 			path := fmt.Sprintf("/campaigns/%s/adgroups", args[0])
 			if !apply {
 				return ctx.Print(dryRunPayload("POST", path, body))
@@ -285,6 +400,36 @@ func adGroupCreate(ctx *appContext) *cobra.Command {
 	return cmd
 }
 
+func adGroupSetBid(ctx *appContext) *cobra.Command {
+	var bid float64
+	var apply bool
+	cmd := &cobra.Command{
+		Use:   "set-bid <campaign-id> <adgroup-id>",
+		Short: "Set ad group default bid",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body := map[string]any{"defaultBidAmount": money(bid, ctx.DefaultCurrency())}
+			path := fmt.Sprintf("/campaigns/%s/adgroups/%s", args[0], args[1])
+			if !apply {
+				return ctx.Print(dryRunPayload("PUT", path, body))
+			}
+			client, err := ctx.Client()
+			if err != nil {
+				return err
+			}
+			resp, err := client.Request(appleads.RequestOptions{Method: http.MethodPut, Path: path, Body: body})
+			if err != nil {
+				return err
+			}
+			return ctx.Print(resp)
+		},
+	}
+	cmd.Flags().Float64Var(&bid, "bid", 0, "new default bid")
+	cmd.Flags().BoolVar(&apply, "apply", false, "execute mutation")
+	_ = cmd.MarkFlagRequired("bid")
+	return cmd
+}
+
 func newKeywordsCommand(ctx *appContext) *cobra.Command {
 	cmd := &cobra.Command{Use: "keywords", Short: "Manage targeting and negative keywords"}
 	cmd.AddCommand(campaignAdGroupList(ctx, "list <campaign-id> <adgroup-id>", "/campaigns/%s/adgroups/%s/targetingkeywords"))
@@ -292,6 +437,7 @@ func newKeywordsCommand(ctx *appContext) *cobra.Command {
 	cmd.AddCommand(keywordNegativeAdd(ctx))
 	cmd.AddCommand(keywordFind(ctx))
 	cmd.AddCommand(keywordUpdateBid(ctx))
+	cmd.AddCommand(keywordSetBid(ctx))
 	cmd.AddCommand(statusCommand(ctx, "pause <campaign-id> <adgroup-id> <keyword-id>", "/campaigns/%s/adgroups/%s/targetingkeywords/%s", "PAUSED"))
 	cmd.AddCommand(statusCommand(ctx, "enable <campaign-id> <adgroup-id> <keyword-id>", "/campaigns/%s/adgroups/%s/targetingkeywords/%s", "ENABLED"))
 	cmd.AddCommand(deleteCommand(ctx, "delete <campaign-id> <adgroup-id> <keyword-id>", "/campaigns/%s/adgroups/%s/targetingkeywords/%s"))
@@ -311,7 +457,7 @@ func keywordAdd(ctx *appContext) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			items := []map[string]any{}
 			for _, text := range parseCSV(texts) {
-				items = append(items, map[string]any{"text": text, "matchType": strings.ToUpper(matchType), "bidAmount": money(bid), "status": "ACTIVE"})
+				items = append(items, map[string]any{"text": text, "matchType": strings.ToUpper(matchType), "bidAmount": money(bid, ctx.DefaultCurrency()), "status": "ACTIVE"})
 			}
 			body := map[string]any{"keywords": items}
 			path := fmt.Sprintf("/campaigns/%s/adgroups/%s/targetingkeywords/bulk", args[0], args[1])
@@ -417,14 +563,22 @@ func keywordFind(ctx *appContext) *cobra.Command {
 }
 
 func keywordUpdateBid(ctx *appContext) *cobra.Command {
+	return keywordBidCommand(ctx, "update-bid <campaign-id> <adgroup-id> <keyword-id>", "Update one keyword bid")
+}
+
+func keywordSetBid(ctx *appContext) *cobra.Command {
+	return keywordBidCommand(ctx, "set-bid <campaign-id> <adgroup-id> <keyword-id>", "Set one keyword bid")
+}
+
+func keywordBidCommand(ctx *appContext, use, short string) *cobra.Command {
 	var bid float64
 	var apply bool
 	cmd := &cobra.Command{
-		Use:   "update-bid <campaign-id> <adgroup-id> <keyword-id>",
-		Short: "Update one keyword bid",
+		Use:   use,
+		Short: short,
 		Args:  cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			body := map[string]any{"bidAmount": money(bid)}
+			body := map[string]any{"bidAmount": money(bid, ctx.DefaultCurrency())}
 			path := fmt.Sprintf("/campaigns/%s/adgroups/%s/targetingkeywords/%s", args[0], args[1], args[2])
 			if !apply {
 				return ctx.Print(dryRunPayload("PUT", path, body))
@@ -448,18 +602,18 @@ func keywordUpdateBid(ctx *appContext) *cobra.Command {
 
 func newReportsCommand(ctx *appContext) *cobra.Command {
 	cmd := &cobra.Command{Use: "reports", Short: "Generate Apple Ads reports"}
-	cmd.AddCommand(reportCommand(ctx, "summary", "/reports/campaigns", "CAMPAIGN"))
-	cmd.AddCommand(reportCommand(ctx, "keywords", "/reports/campaigns/%s/keywords", "KEYWORD"))
-	cmd.AddCommand(reportCommand(ctx, "adgroups", "/reports/campaigns/%s/adgroups", "ADGROUP"))
-	cmd.AddCommand(reportCommand(ctx, "search-terms", "/reports/campaigns/%s/searchterms", "SEARCHTERM"))
-	cmd.AddCommand(reportCommand(ctx, "ads", "/reports/campaigns/%s/ads", "AD"))
-	cmd.AddCommand(reportCommand(ctx, "impression-share", "/reports/campaigns/%s/keywords", "KEYWORD"))
+	cmd.AddCommand(reportCommand(ctx, "summary", "/reports/campaigns"))
+	cmd.AddCommand(reportCommand(ctx, "keywords", "/reports/campaigns/%s/keywords"))
+	cmd.AddCommand(reportCommand(ctx, "adgroups", "/reports/campaigns/%s/adgroups"))
+	cmd.AddCommand(reportCommand(ctx, "search-terms", "/reports/campaigns/%s/searchterms"))
+	cmd.AddCommand(reportCommand(ctx, "ads", "/reports/campaigns/%s/ads"))
+	cmd.AddCommand(reportCommand(ctx, "impression-share", "/reports/campaigns/%s/keywords"))
 	cmd.AddCommand(customReport(ctx), simpleGet(ctx, "custom-list", "/custom-reports", false), idGet(ctx, "custom-get <report-id>", "/custom-reports/%s", false))
 	cmd.AddCommand(campaignAdGroupList(ctx, "bid-recommendations <campaign-id> <adgroup-id>", "/campaigns/%s/adgroups/%s/targetingkeywords/recommendations"))
 	return cmd
 }
 
-func reportCommand(ctx *appContext, use, pathTemplate, selector string) *cobra.Command {
+func reportCommand(ctx *appContext, use, pathTemplate string) *cobra.Command {
 	var days int
 	var start, end string
 	cmd := &cobra.Command{
@@ -476,19 +630,7 @@ func reportCommand(ctx *appContext, use, pathTemplate, selector string) *cobra.C
 				start = startDate.Format("2006-01-02")
 				end = endDate.Format("2006-01-02")
 			}
-			timeZone := "UTC"
-			if strings.Contains(path, "searchterms") {
-				timeZone = "ORTZ"
-			}
-			body := map[string]any{
-				"startTime":         start,
-				"endTime":           end,
-				"selector":          map[string]any{"orderBy": []map[string]any{{"field": "localSpend", "sortOrder": "DESCENDING"}}, "pagination": map[string]any{"offset": 0, "limit": 1000}},
-				"groupBy":           []string{selector},
-				"timeZone":          timeZone,
-				"returnRowTotals":   true,
-				"returnGrandTotals": true,
-			}
+			body := buildReportBody(start, end, path)
 			client, err := ctx.Client()
 			if err != nil {
 				return err
@@ -504,6 +646,27 @@ func reportCommand(ctx *appContext, use, pathTemplate, selector string) *cobra.C
 	cmd.Flags().StringVar(&start, "start", "", "start date YYYY-MM-DD")
 	cmd.Flags().StringVar(&end, "end", "", "end date YYYY-MM-DD")
 	return cmd
+}
+
+func buildReportBody(start, end, path string) map[string]any {
+	timeZone := "UTC"
+	returnRecordsWithNoMetrics := true
+	if strings.Contains(path, "searchterms") {
+		timeZone = "ORTZ"
+		returnRecordsWithNoMetrics = false
+	}
+	return map[string]any{
+		"startTime": start,
+		"endTime":   end,
+		"selector": map[string]any{
+			"orderBy":    []map[string]any{{"field": "localSpend", "sortOrder": "DESCENDING"}},
+			"pagination": map[string]any{"offset": 0, "limit": 1000},
+		},
+		"timeZone":                   timeZone,
+		"returnRowTotals":            true,
+		"returnGrandTotals":          true,
+		"returnRecordsWithNoMetrics": returnRecordsWithNoMetrics,
+	}
 }
 
 func customReport(ctx *appContext) *cobra.Command {
@@ -569,7 +732,7 @@ func budgetCreate(ctx *appContext) *cobra.Command {
 		Use:   "create",
 		Short: "Create a budget order",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			body := map[string]any{"name": name, "budgetAmount": money(amount), "startTime": start, "endTime": end}
+			body := map[string]any{"name": name, "budgetAmount": money(amount, ctx.DefaultCurrency()), "startTime": start, "endTime": end}
 			if !apply {
 				return ctx.Print(dryRunPayload("POST", "/budgetorders", body))
 			}
@@ -631,7 +794,7 @@ func geoSet(ctx *appContext) *cobra.Command {
 		Short: "Set campaign countriesOrRegions",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			body := map[string]any{"countriesOrRegions": parseCSV(countries)}
+			body := campaignUpdatePayload(map[string]any{"countriesOrRegions": parseCSV(countries)})
 			path := fmt.Sprintf("/campaigns/%s", args[0])
 			if !apply {
 				return ctx.Print(dryRunPayload("PUT", path, body))
@@ -904,8 +1067,12 @@ func anyArgs(args []string) []any {
 	return out
 }
 
-func money(amount float64) map[string]string {
-	return map[string]string{"amount": strconv.FormatFloat(amount, 'f', 2, 64), "currency": "USD"}
+func money(amount float64, currency string) map[string]string {
+	currency = strings.TrimSpace(strings.ToUpper(currency))
+	if currency == "" {
+		currency = "USD"
+	}
+	return map[string]string{"amount": strconv.FormatFloat(amount, 'f', 2, 64), "currency": currency}
 }
 
 func idString(v any) string {
