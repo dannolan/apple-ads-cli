@@ -49,6 +49,83 @@ Suggested Homebrew naming:
 
 Local checks found no Homebrew formula for `apple-ads-cli` or `ads-cli` at the time this project was scaffolded. The bare `ads` formula name should be checked again before publishing, but it is fine as an installed binary name from a more specific formula.
 
+## Homebrew Tap
+
+Once the tap exists, users should install with:
+
+```bash
+brew tap dannolan/tap
+brew install apple-ads-cli
+ads --help
+```
+
+For local testing before the formula is published:
+
+```bash
+brew install --build-from-source ./Formula/apple-ads-cli.rb
+ads --help
+```
+
+### Maintainer Setup
+
+Create a separate tap repository:
+
+```bash
+gh repo create dannolan/homebrew-tap --public --clone
+cd homebrew-tap
+mkdir -p Formula
+```
+
+Tag and release this project:
+
+```bash
+cd ../apple-ads-cli
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Download the release tarball and calculate the SHA:
+
+```bash
+curl -L -o apple-ads-cli-0.1.0.tar.gz \
+  https://github.com/dannolan/apple-ads-cli/archive/refs/tags/v0.1.0.tar.gz
+shasum -a 256 apple-ads-cli-0.1.0.tar.gz
+```
+
+Create `Formula/apple-ads-cli.rb` in `dannolan/homebrew-tap`:
+
+```ruby
+class AppleAdsCli < Formula
+  desc "Agent-first Go CLI for Apple Ads"
+  homepage "https://github.com/dannolan/apple-ads-cli"
+  url "https://github.com/dannolan/apple-ads-cli/archive/refs/tags/v0.1.0.tar.gz"
+  sha256 "<sha256-from-shasum>"
+  license "MIT"
+
+  depends_on "go" => :build
+
+  def install
+    system "go", "build", *std_go_args(output: bin/"ads"), "./cmd/ads"
+  end
+
+  test do
+    assert_match "Agent-first CLI for Apple Ads", shell_output("#{bin}/ads --help")
+  end
+end
+```
+
+Test and publish the tap:
+
+```bash
+brew audit --strict --online ./Formula/apple-ads-cli.rb
+brew install --build-from-source ./Formula/apple-ads-cli.rb
+ads --help
+
+git add Formula/apple-ads-cli.rb
+git commit -m "Add apple-ads-cli formula"
+git push origin main
+```
+
 ## Configure
 
 Create Apple Ads API credentials in Apple Ads account settings. You need:
