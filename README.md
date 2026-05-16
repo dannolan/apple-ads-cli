@@ -411,3 +411,7 @@ Recommended policy:
 go test ./...
 go build ./cmd/ads
 ```
+
+## Releases
+
+Before tagging or updating Homebrew, follow [docs/release.md](docs/release.md). The release checklist exists to catch missing entrypoints, ignored files, stale tarball SHAs, and formula build failures before users hit them.
