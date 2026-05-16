@@ -457,9 +457,9 @@ func keywordAdd(ctx *appContext) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			items := []map[string]any{}
 			for _, text := range parseCSV(texts) {
-				items = append(items, map[string]any{"text": text, "matchType": strings.ToUpper(matchType), "bidAmount": money(bid, ctx.DefaultCurrency()), "status": "ACTIVE"})
+				items = append(items, map[string]any{"text": text, "matchType": strings.ToUpper(matchType), "bidAmount": money(bid, ctx.DefaultCurrency())})
 			}
-			body := map[string]any{"keywords": items}
+			body := items
 			path := fmt.Sprintf("/campaigns/%s/adgroups/%s/targetingkeywords/bulk", args[0], args[1])
 			if !apply {
 				return ctx.Print(dryRunPayload("POST", path, body))
@@ -493,9 +493,9 @@ func keywordNegativeAdd(ctx *appContext) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			items := []map[string]any{}
 			for _, text := range parseCSV(texts) {
-				items = append(items, map[string]any{"text": text, "matchType": strings.ToUpper(matchType), "status": "ACTIVE"})
+				items = append(items, map[string]any{"text": text, "matchType": strings.ToUpper(matchType)})
 			}
-			body := map[string]any{"negativeKeywords": items}
+			body := items
 			path := fmt.Sprintf("/campaigns/%s/negativekeywords/bulk", args[0])
 			if !apply {
 				return ctx.Print(dryRunPayload("POST", path, body))

@@ -117,6 +117,76 @@ func TestKeywordBidDryRunUsesConfiguredCurrency(t *testing.T) {
 	}
 }
 
+func TestKeywordAddDryRunUsesAppleBulkArrayPayload(t *testing.T) {
+	configDir := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	code := Execute([]string{"config", "app", "add", "--app-id", "123456", "--name", "My App", "--currency", "AUD", "--config-dir", configDir, "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("config app add failed: %s", stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code = Execute([]string{"keywords", "add", "1", "2", "--text", "facebook marketplace alert,marketplace tracker", "--match", "EXACT", "--bid", "3", "--config-dir", configDir, "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("keywords add dry-run failed: %s", stderr.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &payload); err != nil {
+		t.Fatalf("stdout was not JSON: %v\n%s", err, stdout.String())
+	}
+	body := payload["body"].([]any)
+	if len(body) != 2 {
+		t.Fatalf("expected two keyword payloads, got %#v", body)
+	}
+	first := body[0].(map[string]any)
+	if first["text"] != "facebook marketplace alert" || first["matchType"] != "EXACT" {
+		t.Fatalf("unexpected keyword payload: %#v", first)
+	}
+	bid := first["bidAmount"].(map[string]any)
+	if bid["amount"] != "3.00" || bid["currency"] != "AUD" {
+		t.Fatalf("expected AUD bid payload: %#v", first)
+	}
+	if _, ok := first["status"]; ok {
+		t.Fatalf("create keyword payload should not include status: %#v", first)
+	}
+	if _, ok := payload["body"].(map[string]any); ok {
+		t.Fatalf("Apple bulk keyword create body must be a top-level array: %#v", payload)
+	}
+}
+
+func TestKeywordNegativeAddDryRunUsesAppleBulkArrayPayload(t *testing.T) {
+	configDir := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	code := Execute([]string{"config", "app", "add", "--app-id", "123456", "--name", "My App", "--currency", "AUD", "--config-dir", configDir, "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("config app add failed: %s", stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code = Execute([]string{"keywords", "add-negatives", "1", "--text", "groupon,coupon", "--match", "BROAD", "--config-dir", configDir, "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("keywords add-negatives dry-run failed: %s", stderr.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &payload); err != nil {
+		t.Fatalf("stdout was not JSON: %v\n%s", err, stdout.String())
+	}
+	body := payload["body"].([]any)
+	if len(body) != 2 {
+		t.Fatalf("expected two negative keyword payloads, got %#v", body)
+	}
+	first := body[0].(map[string]any)
+	if first["text"] != "groupon" || first["matchType"] != "BROAD" {
+		t.Fatalf("unexpected negative keyword payload: %#v", first)
+	}
+	if _, ok := first["status"]; ok {
+		t.Fatalf("create negative keyword payload should not include status: %#v", first)
+	}
+	if _, ok := payload["body"].(map[string]any); ok {
+		t.Fatalf("Apple bulk negative keyword create body must be a top-level array: %#v", payload)
+	}
+}
+
 func TestTypedCampaignCommandsBuildSafePayloads(t *testing.T) {
 	configDir := t.TempDir()
 	var stdout, stderr bytes.Buffer
