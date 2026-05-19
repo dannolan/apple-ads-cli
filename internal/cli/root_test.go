@@ -88,6 +88,9 @@ func TestCampaignCreateDryRunUsesConfiguredApp(t *testing.T) {
 	if body["adamId"].(float64) != 123456 {
 		t.Fatalf("expected adamId from app config, got %#v", body)
 	}
+	if _, ok := body["campaignDisplayHint"]; ok {
+		t.Fatalf("Apple campaign create payload must not include local-only hints: %#v", body)
+	}
 	if _, err := os.Stat(filepath.Join(configDir, "apps.json")); err != nil {
 		t.Fatal("expected apps config to be written")
 	}
@@ -110,10 +113,47 @@ func TestKeywordBidDryRunUsesConfiguredCurrency(t *testing.T) {
 	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &payload); err != nil {
 		t.Fatalf("stdout was not JSON: %v\n%s", err, stdout.String())
 	}
-	body := payload["body"].(map[string]any)
-	bid := body["bidAmount"].(map[string]any)
+	if payload["path"] != "/campaigns/1/adgroups/2/targetingkeywords/bulk" {
+		t.Fatalf("expected bulk keyword update path, got %#v", payload)
+	}
+	body := payload["body"].([]any)
+	if len(body) != 1 {
+		t.Fatalf("expected one bulk update item, got %#v", body)
+	}
+	item := body[0].(map[string]any)
+	if item["id"].(float64) != 3 {
+		t.Fatalf("expected numeric keyword id in bulk payload, got %#v", item)
+	}
+	bid := item["bidAmount"].(map[string]any)
 	if bid["currency"] != "AUD" {
 		t.Fatalf("expected configured AUD currency, got %#v", body)
+	}
+}
+
+func TestAdGroupCreateDryRunUsesAppleRequiredFields(t *testing.T) {
+	configDir := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	code := Execute([]string{"config", "app", "add", "--app-id", "123456", "--name", "My App", "--currency", "AUD", "--config-dir", configDir, "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("config app add failed: %s", stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code = Execute([]string{"adgroups", "create", "1", "--name", "Category-Broad", "--bid", "2", "--config-dir", configDir, "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("adgroups create dry-run failed: %s", stderr.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &payload); err != nil {
+		t.Fatalf("stdout was not JSON: %v\n%s", err, stdout.String())
+	}
+	body := payload["body"].(map[string]any)
+	if body["pricingModel"] != "CPC" {
+		t.Fatalf("expected required CPC pricing model, got %#v", body)
+	}
+	bid := body["defaultBidAmount"].(map[string]any)
+	if bid["amount"] != "2.00" || bid["currency"] != "AUD" {
+		t.Fatalf("expected AUD default bid payload, got %#v", body)
 	}
 }
 
