@@ -90,16 +90,15 @@ func campaignCreate(ctx *appContext) *cobra.Command {
 				return err
 			}
 			body := map[string]any{
-				"name":                name,
-				"adamId":              app.ID,
-				"dailyBudgetAmount":   money(dailyBudget, app.DefaultCurrency),
-				"countriesOrRegions":  parseCSV(countries),
-				"status":              "ENABLED",
-				"adChannelType":       "SEARCH",
-				"billingEvent":        "TAPS",
-				"supplySources":       []string{"APPSTORE_SEARCH_RESULTS"},
-				"budgetAmount":        nil,
-				"campaignDisplayHint": "daily budgets are preferred because Apple retires lifetime budgets on 2026-06-16",
+				"name":               name,
+				"adamId":             app.ID,
+				"dailyBudgetAmount":  money(dailyBudget, app.DefaultCurrency),
+				"countriesOrRegions": parseCSV(countries),
+				"status":             "ENABLED",
+				"adChannelType":      "SEARCH",
+				"billingEvent":       "TAPS",
+				"supplySources":      []string{"APPSTORE_SEARCH_RESULTS"},
+				"budgetAmount":       nil,
 			}
 			if !apply {
 				return ctx.Print(dryRunPayload("POST", "/campaigns", body))
@@ -398,7 +397,13 @@ func adGroupCreate(ctx *appContext) *cobra.Command {
 		Short: "Create an ad group",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			body := map[string]any{"name": name, "status": "ENABLED", "defaultBidAmount": money(bid, ctx.DefaultCurrency()), "automatedKeywordsOptIn": searchMatch}
+			body := map[string]any{
+				"name":                   name,
+				"status":                 "ENABLED",
+				"pricingModel":           "CPC",
+				"defaultBidAmount":       money(bid, ctx.DefaultCurrency()),
+				"automatedKeywordsOptIn": searchMatch,
+			}
 			path := fmt.Sprintf("/campaigns/%s/adgroups", args[0])
 			if !apply {
 				return ctx.Print(dryRunPayload("POST", path, body))
@@ -621,8 +626,12 @@ func keywordBidCommand(ctx *appContext, use, short string) *cobra.Command {
 		Short: short,
 		Args:  cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			body := map[string]any{"bidAmount": money(bid, ctx.DefaultCurrency())}
-			path := fmt.Sprintf("/campaigns/%s/adgroups/%s/targetingkeywords/%s", args[0], args[1], args[2])
+			keywordID, err := strconv.ParseInt(args[2], 10, 64)
+			if err != nil {
+				return fmt.Errorf("keyword-id must be numeric: %w", err)
+			}
+			body := []map[string]any{{"id": keywordID, "bidAmount": money(bid, ctx.DefaultCurrency())}}
+			path := fmt.Sprintf("/campaigns/%s/adgroups/%s/targetingkeywords/bulk", args[0], args[1])
 			if !apply {
 				return ctx.Print(dryRunPayload("PUT", path, body))
 			}
