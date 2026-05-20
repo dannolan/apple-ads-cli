@@ -151,6 +151,9 @@ func TestAdGroupCreateDryRunUsesAppleRequiredFields(t *testing.T) {
 	if body["pricingModel"] != "CPC" {
 		t.Fatalf("expected required CPC pricing model, got %#v", body)
 	}
+	if body["startTime"] == "" {
+		t.Fatalf("expected required startTime, got %#v", body)
+	}
 	bid := body["defaultBidAmount"].(map[string]any)
 	if bid["amount"] != "2.00" || bid["currency"] != "AUD" {
 		t.Fatalf("expected AUD default bid payload, got %#v", body)

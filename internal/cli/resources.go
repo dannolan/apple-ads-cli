@@ -401,6 +401,7 @@ func adGroupCreate(ctx *appContext) *cobra.Command {
 				"name":                   name,
 				"status":                 "ENABLED",
 				"pricingModel":           "CPC",
+				"startTime":              appleTimestamp(time.Now().UTC()),
 				"defaultBidAmount":       money(bid, ctx.DefaultCurrency()),
 				"automatedKeywordsOptIn": searchMatch,
 			}
@@ -1128,6 +1129,10 @@ func money(amount float64, currency string) map[string]string {
 		currency = "USD"
 	}
 	return map[string]string{"amount": strconv.FormatFloat(amount, 'f', 2, 64), "currency": currency}
+}
+
+func appleTimestamp(t time.Time) string {
+	return t.UTC().Format("2006-01-02T15:04:05.000")
 }
 
 func idString(v any) string {
