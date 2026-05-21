@@ -466,11 +466,11 @@ func newKeywordsCommand(ctx *appContext) *cobra.Command {
 	cmd.AddCommand(keywordFind(ctx))
 	cmd.AddCommand(keywordUpdateBid(ctx))
 	cmd.AddCommand(keywordSetBid(ctx))
-	cmd.AddCommand(statusCommand(ctx, "pause <campaign-id> <adgroup-id> <keyword-id>", "/campaigns/%s/adgroups/%s/targetingkeywords/%s", "PAUSED"))
-	cmd.AddCommand(statusCommand(ctx, "enable <campaign-id> <adgroup-id> <keyword-id>", "/campaigns/%s/adgroups/%s/targetingkeywords/%s", "ENABLED"))
+	cmd.AddCommand(keywordStatusCommand(ctx, "pause <campaign-id> <adgroup-id> <keyword-id>", "PAUSED"))
+	cmd.AddCommand(keywordStatusCommand(ctx, "enable <campaign-id> <adgroup-id> <keyword-id>", "ACTIVE"))
 	cmd.AddCommand(deleteCommand(ctx, "delete <campaign-id> <adgroup-id> <keyword-id>", "/campaigns/%s/adgroups/%s/targetingkeywords/%s"))
 	cmd.AddCommand(campaignChildList(ctx, "list-negatives <campaign-id>", "/campaigns/%s/negativekeywords"))
-	cmd.AddCommand(deleteCommand(ctx, "delete-negative <campaign-id> <negative-keyword-id>", "/campaigns/%s/negativekeywords/%s"))
+	cmd.AddCommand(campaignNegativeDelete(ctx))
 	return cmd
 }
 
@@ -653,6 +653,67 @@ func keywordBidCommand(ctx *appContext, use, short string) *cobra.Command {
 	return cmd
 }
 
+func keywordStatusCommand(ctx *appContext, use, status string) *cobra.Command {
+	var apply bool
+	cmd := &cobra.Command{
+		Use:  use,
+		Args: cobra.ExactArgs(3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			keywordID, err := strconv.ParseInt(args[2], 10, 64)
+			if err != nil {
+				return fmt.Errorf("keyword-id must be numeric: %w", err)
+			}
+			body := []map[string]any{{"id": keywordID, "status": status}}
+			path := fmt.Sprintf("/campaigns/%s/adgroups/%s/targetingkeywords/bulk", args[0], args[1])
+			if !apply {
+				return ctx.Print(dryRunPayload("PUT", path, body))
+			}
+			client, err := ctx.Client()
+			if err != nil {
+				return err
+			}
+			resp, err := client.Request(appleads.RequestOptions{Method: http.MethodPut, Path: path, Body: body})
+			if err != nil {
+				return err
+			}
+			return ctx.Print(resp)
+		},
+	}
+	cmd.Flags().BoolVar(&apply, "apply", false, "execute mutation")
+	return cmd
+}
+
+func campaignNegativeDelete(ctx *appContext) *cobra.Command {
+	var apply bool
+	cmd := &cobra.Command{
+		Use:   "delete-negative <campaign-id> <negative-keyword-id>",
+		Short: "Delete one campaign negative keyword",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			keywordID, err := strconv.ParseInt(args[1], 10, 64)
+			if err != nil {
+				return fmt.Errorf("negative-keyword-id must be numeric: %w", err)
+			}
+			body := []int64{keywordID}
+			path := fmt.Sprintf("/campaigns/%s/negativekeywords/delete/bulk", args[0])
+			if !apply {
+				return ctx.Print(dryRunPayload("POST", path, body))
+			}
+			client, err := ctx.Client()
+			if err != nil {
+				return err
+			}
+			resp, err := client.Request(appleads.RequestOptions{Method: http.MethodPost, Path: path, Body: body})
+			if err != nil {
+				return err
+			}
+			return ctx.Print(resp)
+		},
+	}
+	cmd.Flags().BoolVar(&apply, "apply", false, "execute mutation")
+	return cmd
+}
+
 func newReportsCommand(ctx *appContext) *cobra.Command {
 	cmd := &cobra.Command{Use: "reports", Short: "Generate Apple Ads reports"}
 	cmd.AddCommand(reportCommand(ctx, "summary", "/reports/campaigns"))
@@ -660,10 +721,54 @@ func newReportsCommand(ctx *appContext) *cobra.Command {
 	cmd.AddCommand(reportCommand(ctx, "adgroups", "/reports/campaigns/%s/adgroups"))
 	cmd.AddCommand(reportCommand(ctx, "search-terms", "/reports/campaigns/%s/searchterms"))
 	cmd.AddCommand(reportCommand(ctx, "ads", "/reports/campaigns/%s/ads"))
-	cmd.AddCommand(reportCommand(ctx, "impression-share", "/reports/campaigns/%s/keywords"))
+	cmd.AddCommand(impressionShareReport(ctx))
+	cmd.AddCommand(reportCommand(ctx, "adgroup-keywords", "/reports/campaigns/%s/adgroups/%s/keywords"))
+	cmd.AddCommand(reportCommand(ctx, "adgroup-search-terms", "/reports/campaigns/%s/adgroups/%s/searchterms"))
+	cmd.AddCommand(reportCommand(ctx, "bid-recommendations", "/reports/campaigns/%s/adgroups/%s/keywords"))
 	cmd.AddCommand(reportDiagnose(ctx))
 	cmd.AddCommand(customReport(ctx), simpleGet(ctx, "custom-list", "/custom-reports", false), idGet(ctx, "custom-get <report-id>", "/custom-reports/%s", false))
-	cmd.AddCommand(campaignAdGroupList(ctx, "bid-recommendations <campaign-id> <adgroup-id>", "/campaigns/%s/adgroups/%s/targetingkeywords/recommendations"))
+	return cmd
+}
+
+func impressionShareReport(ctx *appContext) *cobra.Command {
+	var days int
+	var start, end string
+	var apply bool
+	cmd := &cobra.Command{
+		Use:   "impression-share <campaign-id>",
+		Short: "Create an async Impression Share custom report; dry-run unless --apply is set",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if start == "" || end == "" {
+				endDate := time.Now()
+				startDate := endDate.AddDate(0, 0, -days)
+				start = startDate.Format("2006-01-02")
+				end = endDate.Format("2006-01-02")
+			}
+			client, err := ctx.Client()
+			if err != nil {
+				return err
+			}
+			campaignResp, err := client.Request(appleads.RequestOptions{Method: http.MethodGet, Path: fmt.Sprintf("/campaigns/%s", args[0])})
+			if err != nil {
+				return err
+			}
+			campaign := resourceMap(campaignResp)
+			body := buildImpressionShareBody(args[0], campaign, start, end)
+			if !apply {
+				return ctx.Print(dryRunPayload("POST", "/custom-reports", body))
+			}
+			resp, err := client.Request(appleads.RequestOptions{Method: http.MethodPost, Path: "/custom-reports", Body: body})
+			if err != nil {
+				return err
+			}
+			return ctx.Print(resp)
+		},
+	}
+	cmd.Flags().IntVar(&days, "days", 14, "lookback days when start/end are omitted")
+	cmd.Flags().StringVar(&start, "start", "", "start date YYYY-MM-DD")
+	cmd.Flags().StringVar(&end, "end", "", "end date YYYY-MM-DD")
+	cmd.Flags().BoolVar(&apply, "apply", false, "create the async custom report")
 	return cmd
 }
 
@@ -720,6 +825,61 @@ func buildReportBody(start, end, path string) map[string]any {
 		"returnRowTotals":            true,
 		"returnGrandTotals":          true,
 		"returnRecordsWithNoMetrics": returnRecordsWithNoMetrics,
+	}
+}
+
+func buildImpressionShareBody(campaignID string, campaign map[string]any, start, end string) map[string]any {
+	name := fmt.Sprintf("impression_share_%s_%s", campaignID, end)
+	if len(name) > 50 {
+		name = name[:50]
+	}
+	conditions := []map[string]any{}
+	if adamID, ok := int64Value(campaign["adamId"]); ok {
+		conditions = append(conditions, map[string]any{"field": "adamId", "operator": "IN", "values": []int64{adamID}})
+	}
+	if countries := stringSlice(campaign["countriesOrRegions"]); len(countries) > 0 {
+		conditions = append(conditions, map[string]any{"field": "countryOrRegion", "operator": "IN", "values": countries})
+	}
+	return map[string]any{
+		"name":        name,
+		"startTime":   start,
+		"endTime":     end,
+		"granularity": "DAILY",
+		"selector":    map[string]any{"conditions": conditions},
+	}
+}
+
+func int64Value(value any) (int64, bool) {
+	switch v := value.(type) {
+	case int64:
+		return v, true
+	case int:
+		return int64(v), true
+	case float64:
+		return int64(v), true
+	case string:
+		parsed, err := strconv.ParseInt(v, 10, 64)
+		return parsed, err == nil
+	default:
+		return 0, false
+	}
+}
+
+func stringSlice(value any) []string {
+	switch v := value.(type) {
+	case []string:
+		return v
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			text := strings.TrimSpace(fmt.Sprint(item))
+			if text != "" {
+				out = append(out, text)
+			}
+		}
+		return out
+	default:
+		return nil
 	}
 }
 

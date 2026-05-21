@@ -179,6 +179,7 @@ ads reports summary --days 7 --json
 ads reports keywords <campaign-id> --days 14 --json
 ads reports search-terms <campaign-id> --days 14 --json
 ads reports impression-share <campaign-id> --days 14 --json
+ads reports impression-share <campaign-id> --days 14 --apply --json
 ads reports diagnose <campaign-id> --days 7 --json
 ```
 
@@ -220,7 +221,7 @@ ads reports summary --days 1 --json
 | Campaigns | `ads campaigns list`, `get`, `audit`, `health`, `setup`, `create`, `update`, `pause`, `enable`, `delete` |
 | Ad groups | `ads adgroups list`, `create`, `pause`, `enable`, `delete` |
 | Keywords | `ads keywords list`, `add`, `add-negatives`, `find`, `update-bid`, `pause`, `enable`, `delete`, `list-negatives`, `delete-negative` |
-| Reports | `ads reports summary`, `adgroups`, `keywords`, `search-terms`, `ads`, `impression-share`, `diagnose`, `bid-recommendations`, `custom`, `custom-list`, `custom-get` |
+| Reports | `ads reports summary`, `adgroups`, `keywords`, `search-terms`, `ads`, `adgroup-keywords`, `adgroup-search-terms`, `impression-share`, `diagnose`, `bid-recommendations`, `custom`, `custom-list`, `custom-get` |
 | Account | `ads account snapshot` |
 | Budget | `ads budget list`, `get`, `status`, `create` |
 | Geo | `ads geo search`, `show`, `set` |
@@ -267,8 +268,13 @@ ads reports adgroups <campaign-id> --days 7 --json
 ads reports keywords <campaign-id> --days 14 --json
 ads reports search-terms <campaign-id> --days 14 --json
 ads reports ads <campaign-id> --days 14 --json
+ads reports adgroup-keywords <campaign-id> <adgroup-id> --days 14 --json
+ads reports adgroup-search-terms <campaign-id> <adgroup-id> --days 14 --json
 ads reports bid-recommendations <campaign-id> <adgroup-id> --json
+ads reports impression-share <campaign-id> --days 14 --json
 ```
+
+`ads reports impression-share` is an async custom report wrapper. It returns a dry-run `/custom-reports` payload unless `--apply` is present.
 
 Use `--table` for human-readable scans while keeping `--json` for agents:
 

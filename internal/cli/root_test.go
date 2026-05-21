@@ -130,6 +130,45 @@ func TestKeywordBidDryRunUsesConfiguredCurrency(t *testing.T) {
 	}
 }
 
+func TestKeywordStatusDryRunUsesAppleBulkUpdate(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Execute([]string{"keywords", "pause", "1", "2", "3", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("keywords pause dry-run failed: %s", stderr.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &payload); err != nil {
+		t.Fatalf("stdout was not JSON: %v\n%s", err, stdout.String())
+	}
+	if payload["action"] != "PUT" || payload["path"] != "/campaigns/1/adgroups/2/targetingkeywords/bulk" {
+		t.Fatalf("expected Apple bulk keyword update path, got %#v", payload)
+	}
+	body := payload["body"].([]any)
+	item := body[0].(map[string]any)
+	if item["id"].(float64) != 3 || item["status"] != "PAUSED" {
+		t.Fatalf("expected keyword status update item, got %#v", item)
+	}
+}
+
+func TestCampaignNegativeDeleteDryRunUsesAppleBulkDelete(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Execute([]string{"keywords", "delete-negative", "1", "2", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("keywords delete-negative dry-run failed: %s", stderr.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &payload); err != nil {
+		t.Fatalf("stdout was not JSON: %v\n%s", err, stdout.String())
+	}
+	if payload["action"] != "POST" || payload["path"] != "/campaigns/1/negativekeywords/delete/bulk" {
+		t.Fatalf("expected Apple bulk negative keyword delete path, got %#v", payload)
+	}
+	body := payload["body"].([]any)
+	if body[0].(float64) != 2 {
+		t.Fatalf("expected negative keyword id body, got %#v", body)
+	}
+}
+
 func TestAdGroupCreateDryRunUsesAppleRequiredFields(t *testing.T) {
 	configDir := t.TempDir()
 	var stdout, stderr bytes.Buffer
@@ -347,6 +386,24 @@ func TestBuildReportBodyUsesOrgTimezoneForSearchTerms(t *testing.T) {
 	}
 	if body["returnRecordsWithNoMetrics"] != false {
 		t.Fatalf("expected returnRecordsWithNoMetrics=false for search term reports: %#v", body)
+	}
+}
+
+func TestBuildImpressionShareBodyUsesCustomReportSelector(t *testing.T) {
+	body := buildImpressionShareBody("123", map[string]any{
+		"adamId":             float64(6758812746),
+		"countriesOrRegions": []any{"US", "AU"},
+	}, "2026-05-01", "2026-05-16")
+	if body["granularity"] != "DAILY" || body["startTime"] != "2026-05-01" || body["endTime"] != "2026-05-16" {
+		t.Fatalf("unexpected impression share body dates: %#v", body)
+	}
+	selector := body["selector"].(map[string]any)
+	conditions := selector["conditions"].([]map[string]any)
+	if len(conditions) != 2 {
+		t.Fatalf("expected adamId and countryOrRegion conditions: %#v", body)
+	}
+	if conditions[0]["field"] != "adamId" || conditions[1]["field"] != "countryOrRegion" {
+		t.Fatalf("unexpected impression share selector: %#v", body)
 	}
 }
 

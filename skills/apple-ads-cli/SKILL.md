@@ -36,6 +36,11 @@ ads reports summary --days 7 --json
 ads reports adgroups <campaign-id> --days 7 --json
 ads reports keywords <campaign-id> --days 14 --json
 ads reports search-terms <campaign-id> --days 14 --json
+ads reports adgroup-keywords <campaign-id> <adgroup-id> --days 14 --json
+ads reports adgroup-search-terms <campaign-id> <adgroup-id> --days 14 --json
+ads reports bid-recommendations <campaign-id> <adgroup-id> --json
+ads reports impression-share <campaign-id> --days 14 --json
+ads reports impression-share <campaign-id> --days 14 --apply --json
 ads reports diagnose <campaign-id> --days 7 --json
 ```
 
