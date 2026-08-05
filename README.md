@@ -18,6 +18,10 @@ $ ads keywords add 123 456 --text "photo editor,image filter" --match EXACT --bi
 $ ads keywords add 123 456 --text "photo editor,image filter" --match EXACT --bid 1.75 --apply --json
 ```
 
+## Used by
+
+[**Spottable**](https://spottableapp.com/) — marketplace alerts and deal intelligence for finding better local deals.
+
 ## ✨ Why `ads`
 
 Apple Ads should have a great CLI. Now it does.
